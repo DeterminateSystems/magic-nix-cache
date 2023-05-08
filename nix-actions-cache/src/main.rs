@@ -36,6 +36,13 @@ struct Args {
     /// FIXME: IPv6
     #[arg(short = 'l', long, default_value = "127.0.0.1:3000")]
     listen: SocketAddr,
+
+    /// The cache version.
+    ///
+    /// Only caches with the same version string are visible.
+    /// Using another version string allows you to "bust" the cache.
+    #[arg(long)]
+    cache_version: Option<String>,
 }
 
 /// The global server state.
@@ -63,7 +70,11 @@ async fn main() {
             .expect("Failed to load credentials from environment (see README.md)")
     };
 
-    let api = Api::new(credentials).expect("Failed to initialize GitHub Actions Cache API");
+    let mut api = Api::new(credentials).expect("Failed to initialize GitHub Actions Cache API");
+
+    if let Some(cache_version) = args.cache_version {
+        api.mutate_version(cache_version.as_bytes());
+    }
 
     let state = Arc::new(StateInner { api });
 
