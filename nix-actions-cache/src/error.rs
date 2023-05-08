@@ -12,7 +12,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("GitHub API error")]
+    #[error("GitHub API error: {0}")]
     ApiError(#[from] ApiError),
 
     #[error("Not Found")]

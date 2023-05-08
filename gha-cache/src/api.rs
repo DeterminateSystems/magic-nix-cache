@@ -2,6 +2,8 @@
 //!
 //! We expose a high-level API that deals with "files."
 
+use std::fmt;
+
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use rand::{distributions::Alphanumeric, Rng};
@@ -40,26 +42,26 @@ type Result<T> = std::result::Result<T, Error>;
 /// An API error.
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("Failed to initialize the client")]
+    #[error("Failed to initialize the client: {0}")]
     InitError(Box<dyn std::error::Error + Send + Sync>),
 
-    #[error("Request error")]
+    #[error("Request error: {0}")]
     RequestError(#[from] reqwest::Error), // TODO: Better errors
 
-    #[error("Failed to decode response")]
+    #[error("Failed to decode response ({status}): {error}")]
     DecodeError {
         status: StatusCode,
         bytes: Bytes,
         error: serde_json::Error,
     },
 
-    #[error("API error")]
+    #[error("API error ({status}): {info}")]
     ApiError {
         status: StatusCode,
         info: ApiErrorInfo,
     },
 
-    #[error("I/O error")]
+    #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
 
     #[error("Too many collisions")]
@@ -192,6 +194,19 @@ impl Error {
         E: std::error::Error + Send + Sync + 'static,
     {
         Self::InitError(Box::new(e))
+    }
+}
+
+impl fmt::Display for ApiErrorInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unstructured(bytes) => {
+                write!(f, "[Unstructured] {}", String::from_utf8_lossy(bytes))
+            }
+            Self::Structured(e) => {
+                write!(f, "{:?}", e)
+            }
+        }
     }
 }
 
