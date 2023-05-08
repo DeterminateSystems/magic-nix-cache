@@ -1,0 +1,14 @@
+[workspace]
+
+members = [
+	"gha-cache",
+	"nix-actions-cache",
+]
+
+[profile.release]
+opt-level = 'z'
+strip = true
+lto = true
+panic = "abort"
+incremental = false
+codegen-units = 1
