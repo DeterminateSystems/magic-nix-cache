@@ -86,17 +86,30 @@ async fn main() {
         .route("/:path", put(put_narinfo))
         // .nar
         .route("/nar/:path", get(get_nar))
-        .route("/nar/:path", put(put_nar))
-        .layer(Extension(state));
+        .route("/nar/:path", put(put_nar));
 
     #[cfg(debug_assertions)]
-    let app = app.layer(tower_http::trace::TraceLayer::new_for_http());
+    let app = app
+        .layer(tower_http::trace::TraceLayer::new_for_http())
+        .layer(axum::middleware::from_fn(dump_api_stats));
+
+    let app = app.layer(Extension(state));
 
     tracing::info!("listening on {}", args.listen);
     axum::Server::bind(&args.listen)
         .serve(app.into_make_service())
         .await
         .unwrap();
+}
+
+#[cfg(debug_assertions)]
+async fn dump_api_stats<B>(
+    Extension(state): Extension<State>,
+    request: axum::http::Request<B>,
+    next: axum::middleware::Next<B>,
+) -> axum::response::Response {
+    state.api.dump_stats();
+    next.run(request).await
 }
 
 async fn root() -> &'static str {

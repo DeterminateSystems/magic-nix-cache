@@ -3,6 +3,8 @@
 //! We expose a high-level API that deals with "files."
 
 use std::fmt;
+#[cfg(debug_assertions)]
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
@@ -68,7 +70,7 @@ pub enum Error {
     TooManyCollisions,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Api {
     /// Credentials to access the cache.
     credentials: Credentials,
@@ -84,6 +86,10 @@ pub struct Api {
 
     /// The HTTP client for authenticated requests.
     client: Client,
+
+    /// Backend request statistics.
+    #[cfg(debug_assertions)]
+    stats: RequestStats,
 }
 
 /// A file allocation.
@@ -182,6 +188,14 @@ struct CommitCacheRequest {
     size: usize,
 }
 
+#[cfg(debug_assertions)]
+#[derive(Default, Debug)]
+struct RequestStats {
+    get: AtomicUsize,
+    post: AtomicUsize,
+    patch: AtomicUsize,
+}
+
 #[async_trait]
 trait ResponseExt {
     async fn check(self) -> Result<()>;
@@ -240,6 +254,8 @@ impl Api {
             version: initial_version,
             version_hasher,
             client,
+            #[cfg(debug_assertions)]
+            stats: Default::default(),
         })
     }
 
@@ -311,6 +327,9 @@ impl Api {
 
             let chunk_len = chunk.len();
 
+            #[cfg(debug_assertions)]
+            self.stats.patch.fetch_add(1, Ordering::SeqCst);
+
             self.client
                 .patch(self.construct_url(&format!("caches/{}", allocation.0 .0)))
                 .header(CONTENT_TYPE, "application/octet-stream")
@@ -340,10 +359,21 @@ impl Api {
             .map(|entry| entry.archive_location))
     }
 
+    /// Dumps statistics.
+    ///
+    /// This is for debugging only.
+    pub fn dump_stats(&self) {
+        #[cfg(debug_assertions)]
+        tracing::debug!("Request stats: {:#?}", self.stats);
+    }
+
     // Private
 
     /// Retrieves a cache based on a list of key prefixes.
     async fn get_cache_entry(&self, keys: &[&str]) -> Result<Option<ArtifactCacheEntry>> {
+        #[cfg(debug_assertions)]
+        self.stats.get.fetch_add(1, Ordering::SeqCst);
+
         let res = self
             .client
             .get(self.construct_url("cache"))
@@ -376,6 +406,9 @@ impl Api {
             cache_size,
         };
 
+        #[cfg(debug_assertions)]
+        self.stats.post.fetch_add(1, Ordering::SeqCst);
+
         let res = self
             .client
             .post(self.construct_url("caches"))
@@ -391,6 +424,9 @@ impl Api {
     /// Finalizes uploading to a cache.
     async fn commit_cache(&self, cache_id: CacheId, size: usize) -> Result<()> {
         let req = CommitCacheRequest { size };
+
+        #[cfg(debug_assertions)]
+        self.stats.post.fetch_add(1, Ordering::SeqCst);
 
         self.client
             .post(self.construct_url(&format!("caches/{}", cache_id.0)))
