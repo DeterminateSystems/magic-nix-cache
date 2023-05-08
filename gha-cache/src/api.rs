@@ -5,9 +5,11 @@
 use std::fmt;
 #[cfg(debug_assertions)]
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
+use futures::future;
 use rand::{distributions::Alphanumeric, Rng};
 use reqwest::{
     header::{HeaderMap, HeaderValue, CONTENT_RANGE, CONTENT_TYPE},
@@ -16,7 +18,7 @@ use reqwest::{
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use tokio::io::AsyncRead;
+use tokio::{io::AsyncRead, sync::Semaphore};
 
 use crate::credentials::Credentials;
 use crate::util::read_chunk_async;
@@ -38,6 +40,9 @@ const DEFAULT_VERSION: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_P
 ///
 /// We greedily read this much from the input stream at a time.
 const CHUNK_SIZE: usize = 8 * 1024 * 1024;
+
+/// The number of chunks to upload at the same time.
+const MAX_CONCURRENCY: usize = 5;
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -86,6 +91,9 @@ pub struct Api {
 
     /// The HTTP client for authenticated requests.
     client: Client,
+
+    /// The concurrent upload limit.
+    concurrency_limit: Arc<Semaphore>,
 
     /// Backend request statistics.
     #[cfg(debug_assertions)]
@@ -254,6 +262,7 @@ impl Api {
             version: initial_version,
             version_hasher,
             client,
+            concurrency_limit: Arc::new(Semaphore::new(MAX_CONCURRENCY)),
             #[cfg(debug_assertions)]
             stats: Default::default(),
         })
@@ -316,6 +325,7 @@ impl Api {
     {
         // TODO: Parallelize
         let mut offset = 0;
+        let mut futures = Vec::new();
         loop {
             let buf = BytesMut::with_capacity(CHUNK_SIZE);
             let chunk = read_chunk_async(&mut stream, buf).await?;
@@ -330,21 +340,54 @@ impl Api {
             #[cfg(debug_assertions)]
             self.stats.patch.fetch_add(1, Ordering::SeqCst);
 
-            self.client
-                .patch(self.construct_url(&format!("caches/{}", allocation.0 .0)))
-                .header(CONTENT_TYPE, "application/octet-stream")
-                .header(
-                    CONTENT_RANGE,
-                    format!("bytes {}-{}/*", offset, offset + chunk.len() - 1),
-                )
-                .body(chunk)
-                .send()
-                .await?
-                .check()
-                .await?;
+            futures.push({
+                let client = self.client.clone();
+                let concurrency_limit = self.concurrency_limit.clone();
+                let url = self.construct_url(&format!("caches/{}", allocation.0 .0));
+
+                tokio::task::spawn(async move {
+                    let permit = concurrency_limit.acquire().await.unwrap();
+
+                    tracing::debug!(
+                        "Starting uploading chunk {}-{}",
+                        offset,
+                        offset + chunk_len - 1
+                    );
+
+                    let r = client
+                        .patch(url)
+                        .header(CONTENT_TYPE, "application/octet-stream")
+                        .header(
+                            CONTENT_RANGE,
+                            format!("bytes {}-{}/*", offset, offset + chunk.len() - 1),
+                        )
+                        .body(chunk)
+                        .send()
+                        .await?
+                        .check()
+                        .await;
+
+                    tracing::debug!(
+                        "Finished uploading chunk {}-{}: {:?}",
+                        offset,
+                        offset + chunk_len - 1,
+                        r
+                    );
+
+                    drop(permit);
+
+                    r
+                })
+            });
 
             offset += chunk_len;
         }
+
+        future::join_all(futures)
+            .await
+            .into_iter()
+            .map(|join_result| join_result.unwrap())
+            .collect::<Result<()>>()?;
 
         self.commit_cache(allocation.0, offset).await?;
 

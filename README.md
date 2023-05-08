@@ -19,7 +19,7 @@ nix-store --store $PWD/test-root --extra-substituters 'http://localhost:3000' --
 ## TODO
 
 - [ ] Make a GitHub Action and dogfood
-- [ ] Parallelize upload
+- [x] Parallelize upload
 - [ ] Make sure that the corresponding NAR exists before returning `.narinfo` request
 - [ ] Keep in-memory cache of what's present
 - [ ] Record what's accessed
