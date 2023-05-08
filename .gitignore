@@ -1,7 +1,6 @@
 .direnv
 
 /target
-/Cargo.lock
 
 key.txt
 creds.json
