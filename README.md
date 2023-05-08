@@ -9,7 +9,7 @@ This project depends on internal APIs used by the GitHub Actions Cache.
 See `gha-cache/README.md` for more details on how to obtain the required tokens.
 
 ```
-cargo run -- -c creds.json
+cargo run -- -c creds.json --upstream https://cache.nixos.org
 cargo build --release --target x86_64-unknown-linux-musl
 cargo build --release --target aarch64-unknown-linux-musl
 nix copy --to 'http://127.0.0.1:3000' $(which bash)

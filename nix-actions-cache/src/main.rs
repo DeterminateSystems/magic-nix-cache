@@ -58,12 +58,20 @@ struct Args {
     /// Using another version string allows you to "bust" the cache.
     #[arg(long)]
     cache_version: Option<String>,
+
+    /// The upstream cache.
+    ///
+    /// Requests for unknown NARs are redirected to this cache
+    /// instead.
+    #[arg(long)]
+    upstream: Option<String>,
 }
 
 /// The global server state.
 #[derive(Debug)]
 struct StateInner {
     api: Api,
+    upstream: Option<String>,
 }
 
 #[tokio::main]
@@ -91,7 +99,10 @@ async fn main() {
         api.mutate_version(cache_version.as_bytes());
     }
 
-    let state = Arc::new(StateInner { api });
+    let state = Arc::new(StateInner {
+        api,
+        upstream: args.upstream,
+    });
 
     let app = Router::new()
         .route("/", get(root))
@@ -160,7 +171,11 @@ async fn get_narinfo(
         return Ok(Redirect::temporary(&url));
     }
 
-    Err(Error::NotFound)
+    if let Some(upstream) = &state.upstream {
+        Ok(Redirect::temporary(&format!("{}/{}", upstream, path)))
+    } else {
+        Err(Error::NotFound)
+    }
 }
 async fn put_narinfo(
     Extension(state): Extension<State>,
@@ -193,7 +208,11 @@ async fn get_nar(Extension(state): Extension<State>, Path(path): Path<String>) -
         return Ok(Redirect::temporary(&url));
     }
 
-    Err(Error::NotFound)
+    if let Some(upstream) = &state.upstream {
+        Ok(Redirect::temporary(&format!("{}/nar/{}", upstream, path)))
+    } else {
+        Err(Error::NotFound)
+    }
 }
 async fn put_nar(
     Extension(state): Extension<State>,
