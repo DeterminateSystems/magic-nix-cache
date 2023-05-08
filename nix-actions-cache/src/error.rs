@@ -25,7 +25,8 @@ pub enum Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let code = match &self {
-            Self::ApiError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            // HACK: HTTP 418 makes Nix throw a visible error but not retry
+            Self::ApiError(_) => StatusCode::IM_A_TEAPOT,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::BadRequest => StatusCode::BAD_REQUEST,
         };
