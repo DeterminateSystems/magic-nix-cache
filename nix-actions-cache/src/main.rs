@@ -135,7 +135,7 @@ async fn get_nix_cache_info() -> &'static str {
     // TODO: Make StoreDir configurable
     r#"WantMassQuery: 1
 StoreDir: /nix/store
-Priority: 39
+Priority: 41
 "#
 }
 
