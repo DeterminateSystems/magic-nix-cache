@@ -323,7 +323,6 @@ impl Api {
     where
         S: AsyncRead + Unpin + Send,
     {
-        // TODO: Parallelize
         let mut offset = 0;
         let mut futures = Vec::new();
         loop {
