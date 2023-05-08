@@ -30,6 +30,7 @@ use clap::Parser;
 use tokio::fs;
 use tokio_stream::StreamExt;
 use tokio_util::io::StreamReader;
+use tracing_subscriber::EnvFilter;
 
 use error::{Error, Result};
 use gha_cache::{Api, Credentials};
@@ -78,7 +79,7 @@ struct StateInner {
 async fn main() {
     let args = Args::parse();
 
-    tracing_subscriber::fmt::init();
+    init_logging();
 
     let credentials = if let Some(credentials_file) = &args.credentials_file {
         tracing::info!("Loading credentials from {:?}", credentials_file);
@@ -126,6 +127,17 @@ async fn main() {
         .serve(app.into_make_service())
         .await
         .unwrap();
+}
+
+fn init_logging() {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        #[cfg(debug_assertions)]
+        return EnvFilter::new("gha_cache=debug,nix_action_cache=debug");
+
+        #[cfg(not(debug_assertions))]
+        return EnvFilter::default();
+    });
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 }
 
 #[cfg(debug_assertions)]
