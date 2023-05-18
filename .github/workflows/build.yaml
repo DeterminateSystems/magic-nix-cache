@@ -6,7 +6,25 @@ on:
   workflow_dispatch:
 
 jobs:
-  flake-check:
+  build-artifacts-x86_64-macos:
+    runs-on: macos-12
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - name: "Build something"
+        run: "nix develop -c cargo build --release"
+        
+      - name: Upload a Build Artifact
+        uses: actions/upload-artifact@v3.1.2
+        with:
+          # Artifact name
+          name: nix-actions-cache-x86_64-darwin
+          path: target/release/nix-actions-cache
+          retention-days: 1
+
+  build-artifacts-x86_64-linux:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
@@ -23,3 +41,4 @@ jobs:
           name: nix-actions-cache-x86_64-linux
           path: target/release/nix-actions-cache
           retention-days: 1
+          
