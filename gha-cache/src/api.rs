@@ -336,7 +336,7 @@ impl Api {
             }
 
             if offset == chunk.len() {
-                tracing::debug!("Received first chunk for cache {:?}", allocation.0);
+                tracing::trace!("Received first chunk for cache {:?}", allocation.0);
             }
 
             let chunk_len = chunk.len();

@@ -32,7 +32,7 @@ use tokio::{
     runtime::Runtime,
     sync::{oneshot, Mutex},
 };
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::filter::EnvFilter;
 
 use gha_cache::{Api, Credentials};
 
@@ -148,7 +148,7 @@ fn main() {
 
     let rt = Runtime::new().unwrap();
     rt.block_on(async move {
-        tracing::info!("listening on {}", args.listen);
+        tracing::info!("Listening on {}", args.listen);
         axum::Server::bind(&args.listen)
             .serve(app.into_make_service())
             .with_graceful_shutdown(async move {
@@ -163,12 +163,18 @@ fn main() {
 fn init_logging() {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         #[cfg(debug_assertions)]
-        return EnvFilter::new("info,gha_cache=debug,nix_action_cache=debug");
+        return EnvFilter::new("info")
+            .add_directive("nix_actions_cache=debug".parse().unwrap())
+            .add_directive("gha_cache=debug".parse().unwrap());
 
         #[cfg(not(debug_assertions))]
         return EnvFilter::new("info");
     });
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+
+    tracing_subscriber::fmt()
+        .without_time()
+        .with_env_filter(filter)
+        .init();
 }
 
 #[cfg(debug_assertions)]
