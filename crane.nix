@@ -50,8 +50,9 @@ let
     crossPlatform = crossPlatforms.${system};
     inherit (crossPlatform) pkgs;
     craneLib = (crane.mkLib pkgs).overrideToolchain rustNightly;
-
-    pname = "nix-actions-cache";
+    crateName = craneLib.crateNameFromCargoToml {
+      cargoToml = ./nix-actions-cache/Cargo.toml;
+    };
 
     src = nix-gitignore.gitignoreSource [] ./.;
 
@@ -70,12 +71,14 @@ let
     cargoExtraArgs = "--target ${crossPlatform.rustTargetSpec}";
 
     cargoArtifacts = craneLib.buildDepsOnly ({
-      inherit pname src buildInputs nativeBuildInputs cargoExtraArgs;
+      inherit (crateName) pname version;
+      inherit src buildInputs nativeBuildInputs cargoExtraArgs;
 
       doCheck = false;
     } // crossPlatform.env);
     crate = craneLib.buildPackage ({
-      inherit pname src buildInputs nativeBuildInputs cargoExtraArgs;
+      inherit (crateName) pname version;
+      inherit src buildInputs nativeBuildInputs cargoExtraArgs;
       inherit cargoArtifacts;
 
       # The resulting executable must be standalone
