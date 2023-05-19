@@ -13,15 +13,15 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action-cache@main
 
-      - name: "Build something"
-        run: "nix develop -c cargo build --release"
+      - name: Build package
+        run: "nix build .# -L"
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
           name: nix-actions-cache-macOS
-          path: target/release/nix-actions-cache
+          path: result/bin/nix-actions-cache
           retention-days: 1
 
   check-artifacts-macOS:
@@ -40,7 +40,7 @@ jobs:
           cache-binary: ./cache-binary/nix-actions-cache
 
       - name: "Build something"
-        run: "nix develop -c date"
+        run: "nix build .# -L"
 
   build-artifacts-Linux:
     runs-on: ubuntu-22.04
@@ -49,15 +49,15 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action-cache@main
 
-      - name: "Build something"
-        run: "nix develop -c cargo build --release --target x86_64-unknown-linux-musl"
+      - name: Build package
+        run: "nix build .# -L"
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
           name: nix-actions-cache-Linux
-          path: target/x86_64-unknown-linux-musl/release/nix-actions-cache
+          path: result/bin/nix-actions-cache
           retention-days: 1
 
   check-artifacts-Linux:
@@ -76,4 +76,4 @@ jobs:
           cache-binary: ./cache-binary/nix-actions-cache
 
       - name: "Build something"
-        run: "nix develop -c date"
+        run: "nix build .# -L"
