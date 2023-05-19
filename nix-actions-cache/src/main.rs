@@ -13,23 +13,25 @@
     deny(unused_imports, unused_mut, unused_variables,)
 )]
 
+mod api;
 mod binary_cache;
 mod error;
+mod util;
 
+use std::collections::HashSet;
 use std::fs::{self, File};
 use std::net::SocketAddr;
 use std::os::fd::OwnedFd;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use axum::{
-    extract::Extension,
-    routing::{get, post},
-    Router,
-};
+use axum::{extract::Extension, routing::get, Router};
 use clap::Parser;
 use daemonize::Daemonize;
-use tokio::{runtime::Runtime, sync::oneshot};
+use tokio::{
+    runtime::Runtime,
+    sync::{oneshot, Mutex},
+};
 use tracing_subscriber::EnvFilter;
 
 use gha_cache::{Api, Credentials};
@@ -79,6 +81,9 @@ struct StateInner {
     api: Api,
     upstream: Option<String>,
     shutdown_sender: Mutex<Option<oneshot::Sender<()>>>,
+
+    /// List of store paths originally present.
+    original_paths: Mutex<HashSet<PathBuf>>,
 }
 
 fn main() {
@@ -109,11 +114,12 @@ fn main() {
         api,
         upstream: args.upstream.clone(),
         shutdown_sender: Mutex::new(Some(shutdown_sender)),
+        original_paths: Mutex::new(HashSet::new()),
     });
 
     let app = Router::new()
         .route("/", get(root))
-        .route("/api/finish", post(finish))
+        .merge(api::get_router())
         .merge(binary_cache::get_router());
 
     #[cfg(debug_assertions)]
@@ -155,7 +161,7 @@ fn init_logging() {
         return EnvFilter::new("info,gha_cache=debug,nix_action_cache=debug");
 
         #[cfg(not(debug_assertions))]
-        return EnvFilter::default();
+        return EnvFilter::new("info");
     });
     tracing_subscriber::fmt().with_env_filter(filter).init();
 }
@@ -172,12 +178,4 @@ async fn dump_api_stats<B>(
 
 async fn root() -> &'static str {
     "cache the world 🚀"
-}
-
-async fn finish(Extension(state): Extension<State>) -> &'static str {
-    tracing::info!("Workflow finished - Pushing new store paths");
-    let sender = state.shutdown_sender.lock().unwrap().take().unwrap();
-    sender.send(()).unwrap();
-
-    "Shutting down"
 }

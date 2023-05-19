@@ -1,5 +1,7 @@
 //! Errors.
 
+use std::io::Error as IoError;
+
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -20,6 +22,12 @@ pub enum Error {
 
     #[error("Bad Request")]
     BadRequest,
+
+    #[error("I/O error: {0}")]
+    IoError(#[from] IoError),
+
+    #[error("Failed to upload paths")]
+    FailedToUpload,
 }
 
 impl IntoResponse for Error {
@@ -29,6 +37,7 @@ impl IntoResponse for Error {
             Self::ApiError(_) => StatusCode::IM_A_TEAPOT,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::BadRequest => StatusCode::BAD_REQUEST,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
         (code, format!("{}", self)).into_response()
