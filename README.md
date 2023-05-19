@@ -15,12 +15,3 @@ cargo build --release --target aarch64-unknown-linux-musl
 nix copy --to 'http://127.0.0.1:3000' $(which bash)
 nix-store --store $PWD/test-root --extra-substituters 'http://localhost:3000' --option require-sigs false -r $(which bash)
 ```
-
-## TODO
-
-- [ ] Make a GitHub Action and dogfood
-- [x] Parallelize upload
-- [ ] Make sure that the corresponding NAR exists before returning `.narinfo` request
-- [ ] Keep in-memory cache of what's present
-- [ ] Record what's accessed
-- [ ] Prefetch previously-accessed NARs
