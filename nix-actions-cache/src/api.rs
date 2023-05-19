@@ -2,7 +2,9 @@
 //!
 //! This API is intended to be used by nix-installer-action.
 
-use axum::{extract::Extension, routing::post, Json, Router};
+use std::net::SocketAddr;
+
+use axum::{extract::Extension, routing::post, http::uri::Uri, Json, Router};
 use axum_macros::debug_handler;
 use serde::Serialize;
 
@@ -55,7 +57,8 @@ async fn workflow_finish(
         .collect::<Vec<_>>();
 
     tracing::info!("Pushing {} new paths", new_paths.len());
-    upload_paths(new_paths.clone()).await?;
+    let store_uri = make_store_uri(&state.self_endpoint);
+    upload_paths(new_paths.clone(), &store_uri).await?;
 
     let sender = state.shutdown_sender.lock().await.take().unwrap();
     sender.send(()).unwrap();
@@ -65,4 +68,14 @@ async fn workflow_finish(
         num_final_paths: final_paths.len(),
         num_new_paths: new_paths.len(),
     }))
+}
+
+fn make_store_uri(self_endpoint: &SocketAddr) -> String {
+    Uri::builder()
+        .scheme("http")
+        .authority(self_endpoint.to_string())
+        .path_and_query("/?compression=zstd&parallel-compression=true")
+        .build()
+        .unwrap()
+        .to_string()
 }

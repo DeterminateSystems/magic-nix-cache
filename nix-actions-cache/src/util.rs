@@ -38,16 +38,15 @@ pub async fn get_store_paths() -> Result<HashSet<PathBuf>> {
     Ok(paths)
 }
 
-/// Uploads a list of store paths to the cache.
-pub async fn upload_paths(mut paths: Vec<PathBuf>) -> Result<()> {
+/// Uploads a list of store paths to a store URI.
+pub async fn upload_paths(mut paths: Vec<PathBuf>, store_uri: &str) -> Result<()> {
     // When the daemon started Nix may not have been installed
     let env_path = Command::new("sh")
         .args(&["-lc", "echo $PATH"])
         .output()
         .await?
         .stdout;
-    let env_path = String::from_utf8(env_path)
-        .expect("PATH contains invalid UTF-8");
+    let env_path = String::from_utf8(env_path).expect("PATH contains invalid UTF-8");
 
     while !paths.is_empty() {
         let mut batch = Vec::new();
@@ -63,8 +62,7 @@ pub async fn upload_paths(mut paths: Vec<PathBuf>) -> Result<()> {
 
         let status = Command::new("nix")
             .args(&["--extra-experimental-features", "nix-command"])
-            // FIXME: Port and compression settings
-            .args(&["copy", "--to", "http://127.0.0.1:3000"])
+            .args(&["copy", "--to", store_uri])
             .args(&batch)
             .env("PATH", &env_path)
             .status()

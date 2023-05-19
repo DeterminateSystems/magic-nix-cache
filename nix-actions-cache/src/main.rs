@@ -92,6 +92,11 @@ struct StateInner {
 
     /// Set of store path hashes that are not present in GHAC.
     narinfo_nagative_cache: RwLock<HashSet<String>>,
+
+    /// Endpoint of ourselves.
+    ///
+    /// This is used by our Action API to invoke `nix copy` to upload new paths.
+    self_endpoint: SocketAddr,
 }
 
 fn main() {
@@ -124,6 +129,7 @@ fn main() {
         shutdown_sender: Mutex::new(Some(shutdown_sender)),
         original_paths: Mutex::new(HashSet::new()),
         narinfo_nagative_cache: RwLock::new(HashSet::new()),
+        self_endpoint: args.listen.to_owned(),
     });
 
     let app = Router::new()
