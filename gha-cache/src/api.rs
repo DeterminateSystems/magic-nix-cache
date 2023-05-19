@@ -19,6 +19,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::{io::AsyncRead, sync::Semaphore};
+use unicode_bom::Bom;
 
 use crate::credentials::Credentials;
 use crate::util::read_chunk_async;
@@ -525,16 +526,21 @@ impl ResponseExt for reqwest::Response {
 async fn handle_error(res: reqwest::Response) -> Error {
     let status = res.status();
     let bytes = match res.bytes().await {
-        Ok(bytes) => bytes,
+        Ok(bytes) => {
+            let bom = Bom::from(bytes.as_ref());
+            bytes.slice(bom.len()..)
+        }
         Err(e) => {
             return e.into();
         }
     };
 
-    let info = if let Ok(structured) = serde_json::from_slice(&bytes) {
-        ApiErrorInfo::Structured(structured)
-    } else {
-        ApiErrorInfo::Unstructured(bytes)
+    let info = match serde_json::from_slice(&bytes) {
+        Ok(structured) => ApiErrorInfo::Structured(structured),
+        Err(e) => {
+            tracing::info!("failed to decode error: {}", e);
+            ApiErrorInfo::Unstructured(bytes)
+        }
     };
 
     Error::ApiError { status, info }
