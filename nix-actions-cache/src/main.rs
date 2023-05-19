@@ -20,12 +20,16 @@ use std::fs::{self, File};
 use std::net::SocketAddr;
 use std::os::fd::OwnedFd;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use axum::{extract::Extension, routing::get, Router};
+use axum::{
+    extract::Extension,
+    routing::{get, post},
+    Router,
+};
 use clap::Parser;
 use daemonize::Daemonize;
-use tokio::runtime::Runtime;
+use tokio::{runtime::Runtime, sync::oneshot};
 use tracing_subscriber::EnvFilter;
 
 use gha_cache::{Api, Credentials};
@@ -74,6 +78,7 @@ struct Args {
 struct StateInner {
     api: Api,
     upstream: Option<String>,
+    shutdown_sender: Mutex<Option<oneshot::Sender<()>>>,
 }
 
 fn main() {
@@ -98,12 +103,18 @@ fn main() {
         api.mutate_version(cache_version.as_bytes());
     }
 
+    let (shutdown_sender, shutdown_receiver) = oneshot::channel();
+
     let state = Arc::new(StateInner {
         api,
         upstream: args.upstream.clone(),
+        shutdown_sender: Mutex::new(Some(shutdown_sender)),
     });
 
-    let app = Router::new().route("/", get(root)).merge(api::get_router());
+    let app = Router::new()
+        .route("/", get(root))
+        .route("/api/finish", post(finish))
+        .merge(api::get_router());
 
     #[cfg(debug_assertions)]
     let app = app
@@ -120,6 +131,7 @@ fn main() {
             .stdout(File::from(logfile.try_clone().unwrap()))
             .stderr(File::from(logfile));
 
+        tracing::info!("Forking into the background");
         daemon.start().expect("Failed to fork into the background");
     }
 
@@ -130,6 +142,7 @@ fn main() {
             .serve(app.into_make_service())
             .with_graceful_shutdown(async move {
                 shutdown_receiver.await.ok();
+                tracing::info!("Shutting down");
             })
             .await
             .unwrap()
@@ -139,7 +152,7 @@ fn main() {
 fn init_logging() {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         #[cfg(debug_assertions)]
-        return EnvFilter::new("gha_cache=debug,nix_action_cache=debug");
+        return EnvFilter::new("info,gha_cache=debug,nix_action_cache=debug");
 
         #[cfg(not(debug_assertions))]
         return EnvFilter::default();
@@ -159,4 +172,12 @@ async fn dump_api_stats<B>(
 
 async fn root() -> &'static str {
     "cache the world 🚀"
+}
+
+async fn finish(Extension(state): Extension<State>) -> &'static str {
+    tracing::info!("Workflow finished - Pushing new store paths");
+    let sender = state.shutdown_sender.lock().unwrap().take().unwrap();
+    sender.send(()).unwrap();
+
+    "Shutting down"
 }
