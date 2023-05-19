@@ -30,7 +30,7 @@ use clap::Parser;
 use daemonize::Daemonize;
 use tokio::{
     runtime::Runtime,
-    sync::{oneshot, Mutex},
+    sync::{oneshot, Mutex, RwLock},
 };
 use tracing_subscriber::filter::EnvFilter;
 
@@ -89,6 +89,9 @@ struct StateInner {
 
     /// List of store paths originally present.
     original_paths: Mutex<HashSet<PathBuf>>,
+
+    /// Set of store path hashes that are not present in GHAC.
+    narinfo_nagative_cache: RwLock<HashSet<String>>,
 }
 
 fn main() {
@@ -120,6 +123,7 @@ fn main() {
         upstream: args.upstream.clone(),
         shutdown_sender: Mutex::new(Some(shutdown_sender)),
         original_paths: Mutex::new(HashSet::new()),
+        narinfo_nagative_cache: RwLock::new(HashSet::new()),
     });
 
     let app = Router::new()
