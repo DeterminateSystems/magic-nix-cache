@@ -16,13 +16,16 @@
 mod api;
 mod error;
 
+use std::fs::{self, File};
 use std::net::SocketAddr;
+use std::os::fd::OwnedFd;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::{extract::Extension, routing::get, Router};
 use clap::Parser;
-use tokio::fs;
+use daemonize::Daemonize;
+use tokio::runtime::Runtime;
 use tracing_subscriber::EnvFilter;
 
 use gha_cache::{Api, Credentials};
@@ -58,6 +61,12 @@ struct Args {
     /// instead.
     #[arg(long)]
     upstream: Option<String>,
+
+    /// Daemonize the server.
+    ///
+    /// This is for use in the GitHub Action only.
+    #[arg(long, hide = true)]
+    daemon_dir: Option<PathBuf>,
 }
 
 /// The global server state.
@@ -67,17 +76,14 @@ struct StateInner {
     upstream: Option<String>,
 }
 
-#[tokio::main]
-async fn main() {
-    let args = Args::parse();
-
+fn main() {
     init_logging();
+
+    let args = Args::parse();
 
     let credentials = if let Some(credentials_file) = &args.credentials_file {
         tracing::info!("Loading credentials from {:?}", credentials_file);
-        let bytes = fs::read(credentials_file)
-            .await
-            .expect("Failed to read credentials file");
+        let bytes = fs::read(credentials_file).expect("Failed to read credentials file");
 
         serde_json::from_slice(&bytes).expect("Failed to deserialize credentials file")
     } else {
@@ -88,13 +94,13 @@ async fn main() {
 
     let mut api = Api::new(credentials).expect("Failed to initialize GitHub Actions Cache API");
 
-    if let Some(cache_version) = args.cache_version {
+    if let Some(cache_version) = &args.cache_version {
         api.mutate_version(cache_version.as_bytes());
     }
 
     let state = Arc::new(StateInner {
         api,
-        upstream: args.upstream,
+        upstream: args.upstream.clone(),
     });
 
     let app = Router::new().route("/", get(root)).merge(api::get_router());
@@ -106,11 +112,28 @@ async fn main() {
 
     let app = app.layer(Extension(state));
 
-    tracing::info!("listening on {}", args.listen);
-    axum::Server::bind(&args.listen)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+    if args.daemon_dir.is_some() {
+        let dir = args.daemon_dir.as_ref().unwrap();
+        let logfile: OwnedFd = File::create(dir.join("daemon.log")).unwrap().into();
+        let daemon = Daemonize::new()
+            .pid_file(dir.join("daemon.pid"))
+            .stdout(File::from(logfile.try_clone().unwrap()))
+            .stderr(File::from(logfile));
+
+        daemon.start().expect("Failed to fork into the background");
+    }
+
+    let rt = Runtime::new().unwrap();
+    rt.block_on(async move {
+        tracing::info!("listening on {}", args.listen);
+        axum::Server::bind(&args.listen)
+            .serve(app.into_make_service())
+            .with_graceful_shutdown(async move {
+                shutdown_receiver.await.ok();
+            })
+            .await
+            .unwrap()
+    });
 }
 
 fn init_logging() {
