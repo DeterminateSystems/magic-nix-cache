@@ -335,6 +335,10 @@ impl Api {
                 break;
             }
 
+            if offset == chunk.len() {
+                tracing::debug!("Received first chunk for cache {:?}", allocation.0);
+            }
+
             let chunk_len = chunk.len();
 
             #[cfg(debug_assertions)]
@@ -348,7 +352,7 @@ impl Api {
                 tokio::task::spawn(async move {
                     let permit = concurrency_limit.acquire().await.unwrap();
 
-                    tracing::debug!(
+                    tracing::trace!(
                         "Starting uploading chunk {}-{}",
                         offset,
                         offset + chunk_len - 1
@@ -367,7 +371,7 @@ impl Api {
                         .check()
                         .await;
 
-                    tracing::debug!(
+                    tracing::trace!(
                         "Finished uploading chunk {}-{}: {:?}",
                         offset,
                         offset + chunk_len - 1,
@@ -389,6 +393,8 @@ impl Api {
             .map(|join_result| join_result.unwrap())
             .collect::<Result<()>>()?;
 
+        tracing::debug!("Received all chunks for cache {:?}", allocation.0);
+
         self.commit_cache(allocation.0, offset).await?;
 
         Ok(())
@@ -407,7 +413,7 @@ impl Api {
     /// This is for debugging only.
     pub fn dump_stats(&self) {
         #[cfg(debug_assertions)]
-        tracing::debug!("Request stats: {:#?}", self.stats);
+        tracing::trace!("Request stats: {:?}", self.stats);
     }
 
     // Private
@@ -443,6 +449,8 @@ impl Api {
         key: &str,
         cache_size: Option<usize>,
     ) -> Result<ReserveCacheResponse> {
+        tracing::debug!("Reserving cache for {}", key);
+
         let req = ReserveCacheRequest {
             key,
             version: &self.version,
@@ -466,6 +474,8 @@ impl Api {
 
     /// Finalizes uploading to a cache.
     async fn commit_cache(&self, cache_id: CacheId, size: usize) -> Result<()> {
+        tracing::debug!("Commiting cache {:?}", cache_id);
+
         let req = CommitCacheRequest { size };
 
         #[cfg(debug_assertions)]
