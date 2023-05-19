@@ -83,9 +83,10 @@
           cargo-bloat
           cargo-edit
           cargo-udeps
-
-          age
-        ];
+        ]
+        ++ lib.optional stdenv.hostPlatform.isDarwin darwin.apple_sdk.frameworks.Security
+        ++ lib.optional stdenv.hostPlatform.isDarwin (libiconv.override { enableStatic = true; enableShared = false; })
+        ;
       } // cargoCrossEnvs);
       keygen = pkgs.mkShellNoCC {
         packages = with pkgs; [
