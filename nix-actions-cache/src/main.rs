@@ -78,8 +78,13 @@ struct Args {
 /// The global server state.
 #[derive(Debug)]
 struct StateInner {
+    /// The GitHub Actions Cache API.
     api: Api,
+
+    /// The upstream cache.
     upstream: Option<String>,
+
+    /// The sender half of the oneshot channel to trigger a shutdown.
     shutdown_sender: Mutex<Option<oneshot::Sender<()>>>,
 
     /// List of store paths originally present.
