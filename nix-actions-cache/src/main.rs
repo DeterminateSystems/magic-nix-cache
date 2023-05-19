@@ -13,7 +13,7 @@
     deny(unused_imports, unused_mut, unused_variables,)
 )]
 
-mod api;
+mod binary_cache;
 mod error;
 
 use std::fs::{self, File};
@@ -114,7 +114,7 @@ fn main() {
     let app = Router::new()
         .route("/", get(root))
         .route("/api/finish", post(finish))
-        .merge(api::get_router());
+        .merge(binary_cache::get_router());
 
     #[cfg(debug_assertions)]
     let app = app
