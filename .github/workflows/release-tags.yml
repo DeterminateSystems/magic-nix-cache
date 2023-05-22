@@ -14,7 +14,14 @@ on:
       - "v*.*.*"
 
 jobs:
+  build:
+    uses: ./.github/workflows/build.yaml
+
   release:
+    needs:
+      - build-artifacts-macOS
+      - build-artifacts-Linux
+
     concurrency: release
     runs-on: ubuntu-latest
     permissions:
