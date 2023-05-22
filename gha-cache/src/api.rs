@@ -40,10 +40,10 @@ const DEFAULT_VERSION: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_P
 /// The chunk size in bytes.
 ///
 /// We greedily read this much from the input stream at a time.
-const CHUNK_SIZE: usize = 8 * 1024 * 1024;
+const CHUNK_SIZE: usize = 32 * 1024 * 1024;
 
 /// The number of chunks to upload at the same time.
-const MAX_CONCURRENCY: usize = 5;
+const MAX_CONCURRENCY: usize = 4;
 
 type Result<T> = std::result::Result<T, Error>;
 
