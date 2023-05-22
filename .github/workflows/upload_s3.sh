@@ -27,8 +27,6 @@ if aws s3 ls "$AWS_BUCKET"/"$GIT_ISH"/; then
   fi
 fi
 
-sudo chown $USER: -R artifacts/
-
 mkdir "$DEST"
 mkdir "$GIT_ISH"
 
