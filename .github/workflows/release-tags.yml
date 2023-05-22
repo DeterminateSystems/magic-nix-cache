@@ -18,9 +18,7 @@ jobs:
     uses: ./.github/workflows/build.yaml
 
   release:
-    needs:
-      - build-artifacts-macOS
-      - build-artifacts-Linux
+    needs: build
 
     concurrency: release
     runs-on: ubuntu-latest
