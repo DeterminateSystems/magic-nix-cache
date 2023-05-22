@@ -5,13 +5,16 @@ on:
   workflow_call:
 
 jobs:
-  build-artifacts-macOS:
+  build-artifacts-X64-macOS:
     runs-on: macos-12
     steps:
       - uses: actions/checkout@v3
 
       - uses: DeterminateSystems/nix-installer-action-cache@main
 
+      - name: Print the arch-os
+        run: "echo $RUNNER_ARCH-$RUNNER_OS"
+
       - name: Build package
         run: "nix build .# -L"
 
@@ -19,17 +22,20 @@ jobs:
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
-          name: nix-actions-cache-macOS
+          name: nix-actions-cache-X64-macOS
           path: result/bin/nix-actions-cache
           retention-days: 1
 
-  build-artifacts-Linux:
+  build-artifacts-X64-Linux:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
 
       - uses: DeterminateSystems/nix-installer-action-cache@main
 
+      - name: Print the arch-os
+        run: "echo $RUNNER_ARCH-$RUNNER_OS"
+
       - name: Build package
         run: "nix build .# -L"
 
@@ -37,6 +43,6 @@ jobs:
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
-          name: nix-actions-cache-Linux
+          name: nix-actions-cache-X64-Linux
           path: result/bin/nix-actions-cache
           retention-days: 1
