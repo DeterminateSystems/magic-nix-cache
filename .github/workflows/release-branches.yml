@@ -12,6 +12,9 @@ on:
 
 jobs:
   release:
+    needs:
+      - build-artifacts-macOS
+      - build-artifacts-Linux
     concurrency: release
     runs-on: ubuntu-latest
     permissions:

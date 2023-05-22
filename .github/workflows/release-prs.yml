@@ -10,9 +10,12 @@ on:
 
 jobs:
   release:
+    needs:
+      - build-artifacts-macOS
+      - build-artifacts-Linux
     concurrency: release
     # Only intra-repo PRs are allowed to have PR artifacts uploaded
-    if: github.event.pull_request.head.repo.full_name == 'DeterminateSystems/nix-installer' && contains(github.event.pull_request.labels.*.name, 'upload to s3')
+    if: github.event.pull_request.head.repo.full_name == 'DeterminateSystems/nix-actions-cache' && contains(github.event.pull_request.labels.*.name, 'upload to s3')
     runs-on: ubuntu-latest
     permissions:
       id-token: write # In order to request a JWT for AWS auth
