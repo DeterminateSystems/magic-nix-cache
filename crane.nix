@@ -52,7 +52,10 @@ let
         };
       };
     };
-    systems = lib.filter (s: s == system || lib.hasInfix "linux" s) supportedSystems;
+    systems = lib.filter (s: s == system || lib.hasInfix "linux" s) supportedSystems
+      # Cross from aarch64-darwin -> x86_64-darwin doesn't work yet
+      # Hopefully the situation will improve with the SDK bumps
+      ++ lib.optional (system == "x86_64-darwin") "aarch64-darwin";
   in builtins.listToAttrs (map makeCrossPlatform systems);
 
   cargoTargets = lib.mapAttrsToList (_: p: p.rustTargetSpec) crossPlatforms;
