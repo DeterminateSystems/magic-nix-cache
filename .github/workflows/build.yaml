@@ -12,9 +12,6 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action-cache@main
 
-      - name: Print the arch-os
-        run: "echo $RUNNER_ARCH-$RUNNER_OS"
-
       - name: Build package
         run: "nix build .# -L"
 
