@@ -12,10 +12,14 @@ let
   inherit (stdenv.hostPlatform) system;
 
   nightlyVersion = "2023-05-01";
-  rustNightly = pkgs.rust-bin.nightly.${nightlyVersion}.default.override {
+  rustNightly = (pkgs.rust-bin.nightly.${nightlyVersion}.default.override {
     extensions = [ "rust-src" "rust-analyzer-preview" ];
     targets = cargoTargets;
-  };
+  }).overrideAttrs (old: {
+    # Remove the propagated libiconv since we want to add our static version
+    depsTargetTargetPropagated = lib.filter (d: d.pname != "libiconv")
+      (lib.flatten (old.depsTargetTargetPropagated or []));
+  });
 
   # For easy cross-compilation in devShells
   # We are just composing the pkgsCross.*.stdenv.cc together
@@ -69,12 +73,6 @@ let
       buildInputs = with pkgs; []
       ++ lib.optionals pkgs.stdenv.isDarwin [
         darwin.apple_sdk.frameworks.Security
-      ];
-
-      nativeBuildInputs = with pkgs; []
-      # The Rust toolchain from rust-overlay has a dynamic libiconv in depsTargetTargetPropagated
-      # Our static libiconv needs to take precedence
-      ++ lib.optionals pkgs.stdenv.isDarwin [
         (libiconv.override { enableStatic = true; enableShared = false; })
       ];
 
