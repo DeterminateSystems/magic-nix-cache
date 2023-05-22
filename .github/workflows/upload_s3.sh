@@ -72,27 +72,27 @@ This commit's nix-actions-cache binaries can be fetched from:
 
 Intel macOS:
 
-```
+\`\`\`
 curl --output nix-actions-cache --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix-actions-cache/macOS/rev/$GIT_ISH
-```
+\`\`\`
 
 x86_64 Linux:
 
-```
+\`\`\`
 curl --output nix-actions-cache --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix-actions-cache/Linux/rev/$GIT_ISH
-```
+\`\`\`
 
 Or generally from this ${TYPE}:
 
 Intel macOS:
 
-```
+\`\`\`
 curl --output nix-actions-cache --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix-actions-cache/macOS/${TYPE}/${DEST}
-```
+\`\`\`
 
 x86_64 Linux:
 
-```
+\`\`\`
 curl --output nix-actions-cache --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix-actions-cache/Linux/${TYPE}/${DEST}
-```
+\`\`\`
 EOF
