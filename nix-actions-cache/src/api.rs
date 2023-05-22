@@ -4,7 +4,7 @@
 
 use std::net::SocketAddr;
 
-use axum::{extract::Extension, routing::post, http::uri::Uri, Json, Router};
+use axum::{extract::Extension, http::uri::Uri, routing::post, Json, Router};
 use axum_macros::debug_handler;
 use serde::Serialize;
 

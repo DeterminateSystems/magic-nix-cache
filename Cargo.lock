@@ -737,7 +737,6 @@ dependencies = [
  "clap",
  "daemonize",
  "gha-cache",
- "rand",
  "serde",
  "serde_json",
  "thiserror",

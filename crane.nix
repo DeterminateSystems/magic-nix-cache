@@ -56,34 +56,39 @@ let
 
     src = nix-gitignore.gitignoreSource [] ./.;
 
-    buildInputs = with pkgs; []
+    commonArgs = {
+      inherit (crateName) pname version;
+      inherit src;
+
+      buildInputs = with pkgs; []
       ++ lib.optionals pkgs.stdenv.isDarwin [
         darwin.apple_sdk.frameworks.Security
       ];
 
-    # The Rust toolchain from rust-overlay has a dynamic libiconv in depsTargetTargetPropagated
-    # Our static libiconv needs to take precedence
-    nativeBuildInputs = with pkgs; []
+      nativeBuildInputs = with pkgs; []
+      # The Rust toolchain from rust-overlay has a dynamic libiconv in depsTargetTargetPropagated
+      # Our static libiconv needs to take precedence
       ++ lib.optionals pkgs.stdenv.isDarwin [
         (libiconv.override { enableStatic = true; enableShared = false; })
       ];
 
-    cargoExtraArgs = "--target ${crossPlatform.rustTargetSpec}";
+      cargoExtraArgs = "--target ${crossPlatform.rustTargetSpec}";
 
-    cargoArtifacts = craneLib.buildDepsOnly ({
-      inherit (crateName) pname version;
-      inherit src buildInputs nativeBuildInputs cargoExtraArgs;
+      cargoVendorDir = craneLib.vendorMultipleCargoDeps {
+        inherit (craneLib.findCargoFiles src) cargoConfigs;
+        cargoLockList = [
+          ./Cargo.lock
+          "${rustNightly.passthru.availableComponents.rust-src}/lib/rustlib/src/rust/Cargo.lock"
+        ];
+      };
+    } // crossPlatform.env;
 
-      doCheck = false;
-    } // crossPlatform.env);
-    crate = craneLib.buildPackage ({
-      inherit (crateName) pname version;
-      inherit src buildInputs nativeBuildInputs cargoExtraArgs;
-      inherit cargoArtifacts;
+    crate = craneLib.buildPackage (commonArgs // {
+      cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
       # The resulting executable must be standalone
       allowedRequisites = [];
-    } // crossPlatform.env);
+    });
   in crate;
 in {
   inherit crossPlatforms cargoTargets cargoCrossEnvs;
