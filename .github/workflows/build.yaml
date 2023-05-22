@@ -1,12 +1,11 @@
 name: Build artifacts
 
 on:
-  pull_request:
-  push:
   workflow_dispatch:
+  workflow_call:
 
 jobs:
-  build-artifacts-macOS:
+  build-artifacts-X64-macOS:
     runs-on: macos-12
     steps:
       - uses: actions/checkout@v3
@@ -20,29 +19,11 @@ jobs:
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
-          name: nix-actions-cache-macOS
+          name: nix-actions-cache-X64-macOS
           path: result/bin/nix-actions-cache
           retention-days: 1
 
-  check-artifacts-macOS:
-    runs-on: macos-12
-    needs: build-artifacts-macOS
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/download-artifact@v3
-        with:
-          name: nix-actions-cache-macOS
-          path: cache-binary
-      - name: Make the binary executable
-        run: chmod +x ./cache-binary/nix-actions-cache
-      - uses: DeterminateSystems/nix-installer-action-cache@main
-        with:
-          cache-binary: ./cache-binary/nix-actions-cache
-
-      - name: "Build something"
-        run: "nix build .# -L"
-
-  build-artifacts-Linux:
+  build-artifacts-X64-Linux:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
@@ -56,24 +37,6 @@ jobs:
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
-          name: nix-actions-cache-Linux
+          name: nix-actions-cache-X64-Linux
           path: result/bin/nix-actions-cache
           retention-days: 1
-
-  check-artifacts-Linux:
-    runs-on: ubuntu-22.04
-    needs: build-artifacts-Linux
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/download-artifact@v3
-        with:
-          name: nix-actions-cache-Linux
-          path: cache-binary
-      - name: Make the binary executable
-        run: chmod +x ./cache-binary/nix-actions-cache
-      - uses: DeterminateSystems/nix-installer-action-cache@main
-        with:
-          cache-binary: ./cache-binary/nix-actions-cache
-
-      - name: "Build something"
-        run: "nix build .# -L"

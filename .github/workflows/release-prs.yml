@@ -1,0 +1,61 @@
+name: Release PR
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - labeled
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yaml
+
+  release:
+    needs: build
+
+    concurrency: release
+    # Only intra-repo PRs are allowed to have PR artifacts uploaded
+    # We only want to trigger once the upload once in the case the upload label is added, not when any label is added
+    if: |
+        github.event.pull_request.head.repo.full_name == 'DeterminateSystems/nix-actions-cache'
+        && (
+          (github.event.action == 'labeled' && github.event.label.name == 'upload to s3')
+          || (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'upload to s3'))
+        )
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # In order to request a JWT for AWS auth
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Create the artifacts directory
+        run: rm -rf ./artifacts && mkdir ./artifacts
+
+      - uses: actions/download-artifact@v3
+        with:
+          name: nix-actions-cache-X64-macOS
+          path: cache-binary-X64-macOS
+      - name: Persist the cache binary
+        run: cp ./cache-binary-X64-macOS/nix-actions-cache ./artifacts/nix-actions-cache-X64-macOS
+
+      - uses: actions/download-artifact@v3
+        with:
+          name: nix-actions-cache-X64-Linux
+          path: cache-binary-X64-Linux
+      - name: Persist the cache binary
+        run: cp ./cache-binary-X64-Linux/nix-actions-cache ./artifacts/nix-actions-cache-X64-Linux
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_S3_UPLOAD_ROLE }}
+          aws-region: us-east-2
+      - name: Publish Release (PR)
+        env:
+          AWS_BUCKET: ${{ secrets.AWS_S3_UPLOAD_BUCKET }}
+        run: |
+          .github/workflows/upload_s3.sh pr "${{ github.event.pull_request.number }}" "${{ github.event.pull_request.head.sha }}"

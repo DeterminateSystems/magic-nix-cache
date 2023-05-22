@@ -1,0 +1,58 @@
+name: Release Tags
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yaml
+
+  release:
+    needs: build
+
+    concurrency: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # In order to upload artifacts to GitHub releases
+      id-token: write # In order to request a JWT for AWS auth
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Create the artifacts directory
+        run: rm -rf ./artifacts && mkdir ./artifacts
+
+      - uses: actions/download-artifact@v3
+        with:
+          name: nix-actions-cache-X64-macOS
+          path: cache-binary-X64-macOS
+      - name: Persist the cache binary
+        run: cp ./cache-binary-X64-macOS/nix-actions-cache ./artifacts/nix-actions-cache-X64-macOS
+
+      - uses: actions/download-artifact@v3
+        with:
+          name: nix-actions-cache-X64-Linux
+          path: cache-binary-X64-Linux
+      - name: Persist the cache binary
+        run: cp ./cache-binary-X64-Linux/nix-actions-cache ./artifacts/nix-actions-cache-X64-Linux
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_S3_UPLOAD_ROLE }}
+          aws-region: us-east-2
+      - name: Publish Release to S3 (Tag)
+        env:
+          AWS_BUCKET: ${{ secrets.AWS_S3_UPLOAD_BUCKET }}
+        run: |
+          ./upload_s3.sh "tag" "$GITHUB_REF_NAME" "$GITHUB_SHA"
+      - name: Publish Release to GitHub (Tag)
+        uses: softprops/action-gh-release@v1
+        with:
+          fail_on_unmatched_files: true
+          draft: true
+          files: |
+            artifacts/**
+            nix-installer.sh
