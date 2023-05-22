@@ -26,7 +26,6 @@
 
   outputs = { self, nixpkgs, flake-utils, rust-overlay, crane, ... }: let
     supportedSystems = flake-utils.lib.defaultSystems;
-    nightlyVersion = "2023-05-01";
   in flake-utils.lib.eachSystem supportedSystems (system: let
     pkgs = import nixpkgs {
       inherit system;
@@ -37,13 +36,8 @@
 
     inherit (pkgs) lib;
 
-    rustNightly = pkgs.rust-bin.nightly.${nightlyVersion}.default.override {
-      extensions = [ "rust-src" "rust-analyzer-preview" ];
-      targets = cranePkgs.cargoTargets;
-    };
-
     cranePkgs = pkgs.callPackage ./crane.nix {
-      inherit crane supportedSystems rustNightly;
+      inherit crane supportedSystems;
     };
   in {
     packages = rec {
@@ -55,7 +49,7 @@
         inputsFrom = [ cranePkgs.nix-actions-cache ];
         packages = with pkgs; [
           bashInteractive
-          rustNightly
+          cranePkgs.rustNightly
 
           cargo-bloat
           cargo-edit

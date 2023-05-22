@@ -2,14 +2,20 @@
 , pkgs
 , lib
 , crane
-, rustNightly
 , rust
+, rust-bin
 , nix-gitignore
 , supportedSystems
 }:
 
 let
   inherit (stdenv.hostPlatform) system;
+
+  nightlyVersion = "2023-05-01";
+  rustNightly = pkgs.rust-bin.nightly.${nightlyVersion}.default.override {
+    extensions = [ "rust-src" "rust-analyzer-preview" ];
+    targets = cargoTargets;
+  };
 
   # For easy cross-compilation in devShells
   # We are just composing the pkgsCross.*.stdenv.cc together
@@ -91,7 +97,7 @@ let
     });
   in crate;
 in {
-  inherit crossPlatforms cargoTargets cargoCrossEnvs;
+  inherit crossPlatforms cargoTargets cargoCrossEnvs rustNightly;
 
   nix-actions-cache = buildFor system;
 }
