@@ -1,14 +1,6 @@
 name: Release PR
 
 on:
-  workflow_run:
-    workflows: ["Build artifacts"]
-    branches:
-      # NOTE: make sure any branches here are also valid directory names,
-      # otherwise creating the directory and uploading to s3 will fail
-      - "main"
-    types:
-      - completed
   pull_request:
     types:
       - opened
