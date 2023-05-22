@@ -51,8 +51,8 @@
       default = nix-actions-cache;
     };
     devShells = {
-      inputsFrom = [ cranePkgs.nix-actions-cache ];
       default = pkgs.mkShell ({
+        inputsFrom = [ cranePkgs.nix-actions-cache ];
         packages = with pkgs; [
           bashInteractive
           rustNightly
