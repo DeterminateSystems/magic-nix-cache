@@ -87,12 +87,12 @@ Or generally from this ${TYPE}:
 Intel macOS:
 
 \`\`\`
-curl --output nix-actions-cache --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix-actions-cache/${TYPE}/${DEST}/X64-macOS
+curl --output nix-actions-cache --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix-actions-cache/${TYPE}/${TYPE_ID}/X64-macOS
 \`\`\`
 
 x86_64 Linux:
 
 \`\`\`
-curl --output nix-actions-cache --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix-actions-cache/${TYPE}/${DEST}/X64-Linux
+curl --output nix-actions-cache --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix-actions-cache/${TYPE}/${TYPE_ID}/X64-Linux
 \`\`\`
 EOF
