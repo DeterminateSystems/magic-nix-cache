@@ -38,15 +38,17 @@ let
       cargoLinkerEnv = lib.strings.toUpper "CARGO_TARGET_${rustTargetSpecUnderscored}_LINKER";
       cargoCcEnv = "CC_${rustTargetSpecUnderscored}"; # for ring
 
-      cc = "${pkgsCross.stdenv.cc}/bin/${pkgsCross.stdenv.cc.targetPrefix}cc";
+      ccbin = "${pkgsCross.stdenv.cc}/bin/${pkgsCross.stdenv.cc.targetPrefix}cc";
     in {
       name = crossSystem;
       value = {
-        inherit rustTargetSpec cc;
+        inherit rustTargetSpec;
+        cc = pkgsCross.stdenv.cc;
         pkgs = pkgsCross;
+        buildInputs = makeBuildInputs pkgsCross;
         env = {
-          "${cargoLinkerEnv}" = cc;
-          "${cargoCcEnv}" = cc;
+          "${cargoLinkerEnv}" = ccbin;
+          "${cargoCcEnv}" = ccbin;
         };
       };
     };
@@ -55,6 +57,12 @@ let
 
   cargoTargets = lib.mapAttrsToList (_: p: p.rustTargetSpec) crossPlatforms;
   cargoCrossEnvs = lib.foldl (acc: p: acc // p.env) {} (builtins.attrValues crossPlatforms);
+
+  makeBuildInputs = pkgs: with pkgs; []
+    ++ lib.optionals pkgs.stdenv.isDarwin [
+      darwin.apple_sdk.frameworks.Security
+      (libiconv.override { enableStatic = true; enableShared = false; })
+    ];
 
   buildFor = system: let
     crossPlatform = crossPlatforms.${system};
@@ -70,11 +78,7 @@ let
       inherit (crateName) pname version;
       inherit src;
 
-      buildInputs = with pkgs; []
-      ++ lib.optionals pkgs.stdenv.isDarwin [
-        darwin.apple_sdk.frameworks.Security
-        (libiconv.override { enableStatic = true; enableShared = false; })
-      ];
+      buildInputs = makeBuildInputs pkgs;
 
       cargoExtraArgs = "--target ${crossPlatform.rustTargetSpec}";
 
