@@ -36,14 +36,14 @@ jobs:
           name: nix-actions-cache-X64-macOS
           path: cache-binary-X64-macOS
       - name: Persist the cache binary
-        run: cp ./cache-binary-macOS/nix-actions-cache ./artifacts/nix-actions-cache-X64-macOS
+        run: cp ./cache-binary-X64-macOS/nix-actions-cache ./artifacts/nix-actions-cache-X64-macOS
 
       - uses: actions/download-artifact@v3
         with:
           name: nix-actions-cache-X64-Linux
           path: cache-binary-X64-Linux
       - name: Persist the cache binary
-        run: cp ./cache-binary-Linux/nix-actions-cache ./artifacts/nix-actions-cache-X64-Linux
+        run: cp ./cache-binary-X64-Linux/nix-actions-cache ./artifacts/nix-actions-cache-X64-Linux
 
       - name: Publish Release (Branch)
         env:
