@@ -31,6 +31,11 @@ pub async fn get_store_paths() -> Result<HashSet<PathBuf>> {
             if s.ends_with("-source") {
                 continue;
             }
+
+            // Special paths (so far only `.links`)
+            if s.starts_with(".") {
+                continue;
+            }
         }
 
         paths.insert(store_dir.join(file_name));
