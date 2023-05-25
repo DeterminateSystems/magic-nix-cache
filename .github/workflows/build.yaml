@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - uses: DeterminateSystems/nix-installer-action-cache@main
+      - uses: DeterminateSystems/nix-installer-action-cache@checker
 
       - name: Build package
         run: "nix build .# -L"
@@ -28,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - uses: DeterminateSystems/nix-installer-action-cache@main
+      - uses: DeterminateSystems/nix-installer-action-cache@checker
 
       - name: Build package
         run: "nix build .# -L"
