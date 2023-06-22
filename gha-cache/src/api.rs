@@ -390,8 +390,7 @@ impl Api {
         future::join_all(futures)
             .await
             .into_iter()
-            .map(|join_result| join_result.unwrap())
-            .collect::<Result<()>>()?;
+            .try_for_each(|join_result| join_result.unwrap())?;
 
         tracing::debug!("Received all chunks for cache {:?}", allocation.0);
 

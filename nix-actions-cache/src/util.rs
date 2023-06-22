@@ -33,7 +33,7 @@ pub async fn get_store_paths() -> Result<HashSet<PathBuf>> {
             }
 
             // Special paths (so far only `.links`)
-            if s.starts_with(".") {
+            if s.starts_with('.') {
                 continue;
             }
         }
@@ -47,7 +47,7 @@ pub async fn get_store_paths() -> Result<HashSet<PathBuf>> {
 pub async fn upload_paths(mut paths: Vec<PathBuf>, store_uri: &str) -> Result<()> {
     // When the daemon started Nix may not have been installed
     let env_path = Command::new("sh")
-        .args(&["-lc", "echo $PATH"])
+        .args(["-lc", "echo $PATH"])
         .output()
         .await?
         .stdout;
@@ -66,8 +66,8 @@ pub async fn upload_paths(mut paths: Vec<PathBuf>, store_uri: &str) -> Result<()
         tracing::debug!("{} paths in this batch", batch.len());
 
         let status = Command::new("nix")
-            .args(&["--extra-experimental-features", "nix-command"])
-            .args(&["copy", "--to", store_uri])
+            .args(["--extra-experimental-features", "nix-command"])
+            .args(["copy", "--to", store_uri])
             .args(&batch)
             .env("PATH", &env_path)
             .status()

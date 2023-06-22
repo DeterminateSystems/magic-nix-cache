@@ -1,0 +1,20 @@
+name: Rust checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: DeterminateSystems/nix-installer-action-cache@main
+
+      - name: Check Rust formatting
+        run: nix develop --command cargo fmt --check
+      
+      - name: Clippy
+        run: nix develop --command cargo clippy
