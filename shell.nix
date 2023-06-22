@@ -13,4 +13,5 @@ let
   shell = flake.shellNix.default // {
     reproduce = flake.defaultNix.outputs.reproduce.${builtins.currentSystem};
   };
-in shell
+in
+shell
