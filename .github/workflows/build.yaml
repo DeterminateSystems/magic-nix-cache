@@ -5,20 +5,12 @@ on:
   workflow_call:
 
 jobs:
-  lints:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v3
-      - uses: DeterminateSystems/flake-checker-action@v4
-        with:
-          fail-mode: true
-
   build-artifacts-X64-macOS:
     runs-on: macos-12
     steps:
       - uses: actions/checkout@v3
 
-      - uses: DeterminateSystems/nix-installer-action-cache@checker
+      - uses: DeterminateSystems/nix-installer-action-cache@main
 
       - name: Build package
         run: "nix build .# -L"
@@ -36,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - uses: DeterminateSystems/nix-installer-action-cache@checker
+      - uses: DeterminateSystems/nix-installer-action-cache@main
 
       - name: Build package
         run: "nix build .# -L"
