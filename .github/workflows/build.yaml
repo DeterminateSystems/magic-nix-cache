@@ -5,6 +5,14 @@ on:
   workflow_call:
 
 jobs:
+  lints:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: DeterminateSystems/flake-checker-action@v4
+        with:
+          fail-mode: true
+
   build-artifacts-X64-macOS:
     runs-on: macos-12
     steps:
