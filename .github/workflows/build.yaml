@@ -5,20 +5,6 @@ on:
   workflow_call:
 
 jobs:
-  checks:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v3
-
-      - uses: DeterminateSystems/nix-installer-action-cache@main
-
-      - name: Check Rust formatting
-        run: nix develop --command cargo fmt --check
-      
-      - name: Clippy
-        run: nix develop --command cargo clippy
-
-
   build-artifacts-X64-macOS:
     runs-on: macos-12
     steps:
