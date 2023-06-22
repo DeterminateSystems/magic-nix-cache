@@ -1,0 +1,16 @@
+name: Run checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - name: Check health of flake.lock
+        uses: DeterminateSystems/flake-checker-action@v4
+        with:
+          fail-mode: true
