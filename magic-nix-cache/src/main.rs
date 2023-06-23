@@ -68,6 +68,16 @@ struct Args {
     #[arg(long)]
     upstream: Option<String>,
 
+    /// Diagnostic endpoint to send diagnostics and performance data.
+    ///
+    /// Set it to an empty string to disable reporting.
+    /// See the README for details.
+    #[arg(
+        long,
+        default_value = "https://install.determinate.systems/nix-actions-cache/perf"
+    )]
+    diagnostic_endpoint: String,
+
     /// Daemonize the server.
     ///
     /// This is for use in the GitHub Action only.
@@ -114,6 +124,15 @@ fn main() {
         Credentials::load_from_env()
             .expect("Failed to load credentials from environment (see README.md)")
     };
+
+    match args.diagnostic_endpoint.as_str() {
+        "" => {
+            tracing::info!("Diagnostics disabled.");
+        }
+        url => {
+            tracing::info!("Diagnostics would report to {url}, but is currently unimplemented.");
+        }
+    }
 
     let mut api = Api::new(credentials).expect("Failed to initialize GitHub Actions Cache API");
 
