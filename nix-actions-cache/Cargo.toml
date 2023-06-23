@@ -12,7 +12,7 @@ axum = { version = "0.6.18", default-features = false, features = ["json", "toki
 axum-macros = "0.3.7"
 clap = { version = "4.2.7", default-features = false, features = ["std", "derive", "error-context"] }
 tracing = "0.1.37"
-tracing-subscriber = { version = "0.3.17", default-features = false, features = ["env-filter", "fmt", "tracing-log", "smallvec"] }
+tracing-subscriber = { version = "0.3.17", default-features = false, features = ["ansi", "env-filter", "fmt", "tracing-log", "smallvec"] }
 tower-http = { version = "0.4.0", features = ["trace"] }
 serde = { version = "1.0.162", features = ["derive"] }
 serde_json = { version = "1.0.96", default-features = false }
