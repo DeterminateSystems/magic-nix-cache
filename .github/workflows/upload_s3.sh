@@ -66,18 +66,18 @@ fi
 
 
 cat <<-EOF >> $GITHUB_STEP_SUMMARY
-This commit's nix-actions-cache binaries can be fetched from:
+This commit's magic-nix-cache binaries can be fetched from:
 
 Intel macOS:
 
 \`\`\`
-curl --output nix-actions-cache --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix-actions-cache/rev/$GIT_ISH/X64-macOS
+curl --output magic-nix-cache --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/magic-nix-cache/rev/$GIT_ISH/X64-macOS
 \`\`\`
 
 x86_64 Linux:
 
 \`\`\`
-curl --output nix-actions-cache --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix-actions-cache/rev/$GIT_ISH/X64-Linux
+curl --output magic-nix-cache --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/magic-nix-cache/rev/$GIT_ISH/X64-Linux
 \`\`\`
 
 Or generally from this ${TYPE}:
@@ -85,12 +85,12 @@ Or generally from this ${TYPE}:
 Intel macOS:
 
 \`\`\`
-curl --output nix-actions-cache --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix-actions-cache/${TYPE}/${TYPE_ID}/X64-macOS
+curl --output magic-nix-cache --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/magic-nix-cache/${TYPE}/${TYPE_ID}/X64-macOS
 \`\`\`
 
 x86_64 Linux:
 
 \`\`\`
-curl --output nix-actions-cache --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix-actions-cache/${TYPE}/${TYPE_ID}/X64-Linux
+curl --output magic-nix-cache --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/magic-nix-cache/${TYPE}/${TYPE_ID}/X64-Linux
 \`\`\`
 EOF

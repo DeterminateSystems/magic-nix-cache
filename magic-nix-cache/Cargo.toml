@@ -1,12 +1,10 @@
 [package]
-name = "nix-actions-cache"
+name = "magic-nix-cache"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-gha-cache = { path = "../gha-cache" }
+magic-actions-cache = { path = "../magic-actions-cache" }
 
 axum = { version = "0.6.18", default-features = false, features = ["json", "tokio"] }
 axum-macros = "0.3.7"

@@ -26,17 +26,17 @@ jobs:
 
       - uses: actions/download-artifact@v3
         with:
-          name: nix-actions-cache-X64-macOS
+          name: magic-nix-cache-X64-macOS
           path: cache-binary-X64-macOS
       - name: Persist the cache binary
-        run: cp ./cache-binary-X64-macOS/nix-actions-cache ./artifacts/nix-actions-cache-X64-macOS
+        run: cp ./cache-binary-X64-macOS/magic-nix-cache ./artifacts/magic-nix-cache-X64-macOS
 
       - uses: actions/download-artifact@v3
         with:
-          name: nix-actions-cache-X64-Linux
+          name: magic-nix-cache-X64-Linux
           path: cache-binary-X64-Linux
       - name: Persist the cache binary
-        run: cp ./cache-binary-X64-Linux/nix-actions-cache ./artifacts/nix-actions-cache-X64-Linux
+        run: cp ./cache-binary-X64-Linux/magic-nix-cache ./artifacts/magic-nix-cache-X64-Linux
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
