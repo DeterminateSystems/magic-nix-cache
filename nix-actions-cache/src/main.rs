@@ -182,7 +182,7 @@ fn init_logging() {
     });
 
     tracing_subscriber::fmt()
-        .without_time()
+        .pretty()
         .with_env_filter(filter)
         .init();
 }
