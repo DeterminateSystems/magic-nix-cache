@@ -381,6 +381,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "gha-cache"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "derivative",
+ "futures",
+ "hex",
+ "rand",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "unicode-bom",
+]
+
+[[package]]
 name = "h2"
 version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -625,27 +646,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "magic-actions-cache"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "bytes",
- "derivative",
- "futures",
- "hex",
- "rand",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "tokio",
- "tracing",
- "unicode-bom",
-]
-
-[[package]]
 name = "magic-nix-cache"
 version = "0.1.0"
 dependencies = [
@@ -653,7 +653,7 @@ dependencies = [
  "axum-macros",
  "clap",
  "daemonize",
- "magic-actions-cache",
+ "gha-cache",
  "serde",
  "serde_json",
  "thiserror",

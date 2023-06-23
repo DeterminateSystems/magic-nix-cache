@@ -6,7 +6,7 @@ It can be compiled into a ~3.5MB static binary for distribution, allowing it to 
 ## Development
 
 This project depends on internal APIs used by the GitHub Actions Cache.
-See `magic-actions-cache/README.md` for more details on how to obtain the required tokens.
+See `gha-cache/README.md` for more details on how to obtain the required tokens.
 
 ```
 cargo run -- -c creds.json --upstream https://cache.nixos.org

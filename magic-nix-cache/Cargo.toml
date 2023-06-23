@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-magic-actions-cache = { path = "../magic-actions-cache" }
+gha-cache = { path = "../gha-cache" }
 
 axum = { version = "0.6.18", default-features = false, features = ["json", "tokio"] }
 axum-macros = "0.3.7"

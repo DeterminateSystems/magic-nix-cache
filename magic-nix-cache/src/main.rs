@@ -34,7 +34,7 @@ use tokio::{
 };
 use tracing_subscriber::filter::EnvFilter;
 
-use magic_actions_cache::{Api, Credentials};
+use gha_cache::{Api, Credentials};
 
 type State = Arc<StateInner>;
 
@@ -175,7 +175,7 @@ fn init_logging() {
         #[cfg(debug_assertions)]
         return EnvFilter::new("info")
             .add_directive("magic_nix_cache=debug".parse().unwrap())
-            .add_directive("magic_actions_cache=debug".parse().unwrap());
+            .add_directive("gha_cache=debug".parse().unwrap());
 
         #[cfg(not(debug_assertions))]
         return EnvFilter::new("info");

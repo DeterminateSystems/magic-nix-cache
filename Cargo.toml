@@ -1,6 +1,6 @@
 [workspace]
 members = [
-	"magic-actions-cache",
+	"gha-cache",
 	"magic-nix-cache",
 ]
 
