@@ -41,13 +41,13 @@
     in
     {
       packages = forEachSupportedSystem ({ pkgs, cranePkgs, ... }: rec {
-        inherit (cranePkgs) nix-actions-cache;
-        default = nix-actions-cache;
+        inherit (cranePkgs) magic-nix-cache;
+        default = magic-nix-cache;
       });
 
       devShells = forEachSupportedSystem ({ pkgs, cranePkgs, lib }: {
         default = pkgs.mkShell ({
-          inputsFrom = [ cranePkgs.nix-actions-cache ];
+          inputsFrom = [ cranePkgs.magic-nix-cache ];
           packages = with pkgs; [
             bashInteractive
             cranePkgs.rustNightly

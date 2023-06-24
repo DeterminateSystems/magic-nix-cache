@@ -78,7 +78,7 @@ let
       inherit (crossPlatform) pkgs;
       craneLib = (crane.mkLib pkgs).overrideToolchain rustNightly;
       crateName = craneLib.crateNameFromCargoToml {
-        cargoToml = ./nix-actions-cache/Cargo.toml;
+        cargoToml = ./magic-nix-cache/Cargo.toml;
       };
 
       src = nix-gitignore.gitignoreSource [ ] ./.;
@@ -112,5 +112,5 @@ in
 {
   inherit crossPlatforms cargoTargets cargoCrossEnvs rustNightly;
 
-  nix-actions-cache = buildFor system;
+  magic-nix-cache = buildFor system;
 }

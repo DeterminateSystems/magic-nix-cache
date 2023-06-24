@@ -174,7 +174,7 @@ fn init_logging() {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         #[cfg(debug_assertions)]
         return EnvFilter::new("info")
-            .add_directive("nix_actions_cache=debug".parse().unwrap())
+            .add_directive("magic_nix_cache=debug".parse().unwrap())
             .add_directive("gha_cache=debug".parse().unwrap());
 
         #[cfg(not(debug_assertions))]

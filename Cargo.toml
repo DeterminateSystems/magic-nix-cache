@@ -1,8 +1,7 @@
 [workspace]
-
 members = [
 	"gha-cache",
-	"nix-actions-cache",
+	"magic-nix-cache",
 ]
 
 [profile.release]

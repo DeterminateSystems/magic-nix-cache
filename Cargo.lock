@@ -646,6 +646,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "magic-nix-cache"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "axum-macros",
+ "clap",
+ "daemonize",
+ "gha-cache",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "match_cfg"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -694,26 +714,6 @@ dependencies = [
  "log",
  "wasi",
  "windows-sys 0.45.0",
-]
-
-[[package]]
-name = "nix-actions-cache"
-version = "0.1.0"
-dependencies = [
- "axum",
- "axum-macros",
- "clap",
- "daemonize",
- "gha-cache",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tower-http",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
