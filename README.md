@@ -15,7 +15,9 @@ See [Usage](#usage) for a detailed example.
 Magic Nix Cache uses the GitHub Actions [built-in cache][ghacache] to share builds between Workflow runs, and has many advantages over alternatives.
 
 1. Totally free: backed by GitHub Actions' cache, there is no additional service to pay for.
-1. Zero configuration: add our action to your workflow. That's it.
+1. Zero configuration: add our action to your workflow.
+   That's it.
+   Everything built in your workflow will be cached.
 1. No secrets: Forks and pull requests benefit from the cache, too.
 1. Secure: Magic Nix Cache follows the [same semantics as the GitHub Actions cache][semantics], and malicious pull requests cannot pollute your project.
 1. Private: The cache is stored in the GitHub Actions cache, not with an additional third party.
@@ -44,6 +46,25 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - run: nix flake check
 ```
+
+That's it.
+Everything built in your workflow will be cached.
+
+## Usage Notes
+
+The GitHub Actions Cache has a rate limit on reads and writes.
+Occasionally, large projects or large rebuilds may exceed those rate-limits, and you'll see evidence of that in your logs.
+The error looks like this:
+
+```
+error: unable to download 'http://127.0.0.1:37515/<...>': HTTP error 418
+       response body:
+       GitHub API error: API error (429 Too Many Requests): StructuredApiError { message: "Request was blocked due to exceeding usage of resource 'Count' in namespace ''." }
+```
+
+The caching daemon and Nix both handle this gracefully, and won't cause your CI to fail.
+When the rate limit is exceeded while pulling dependencies, your workflow may perform more builds than usual.
+When the rate limit is exceeded while uploading to the cache, the remainder of those store paths will be uploaded on the next run of the workflow.
 
 ## Development
 
