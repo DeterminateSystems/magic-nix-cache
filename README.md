@@ -15,6 +15,26 @@ Magix Nix Cache uses the GitHub Actions [built-in cache][ghacache] to share buil
 > This means the cache is only usable in CI.
 > Zero to Nix has an article on binary caching if you want to [share Nix builds][z2ncache] with users outside of CI.
 
+## Usage
+
+Add it to your Linux and macOS GitHub Actions workflows, like this:
+
+```yaml
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+```
+
 ## Development
 
 This project depends on the GitHub Actions Cache API.
