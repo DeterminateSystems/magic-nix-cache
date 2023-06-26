@@ -12,8 +12,8 @@ Magix Nix Cache uses the GitHub Actions [built-in cache][ghacache] to share buil
 1. Private: The cache is stored in the GitHub Actions cache, not with an additional third party.
 
 > **Note:** the Magic Nix Cache doesn't offer a publically available cache.
-This means the cache is only usable in CI.
-Zero to Nix has an article on binary caching if you want to [share Nix builds][z2ncache] with users outside of CI.
+> This means the cache is only usable in CI.
+> Zero to Nix has an article on binary caching if you want to [share Nix builds][z2ncache] with users outside of CI.
 
 ## Development
 
@@ -28,7 +28,6 @@ nix copy --to 'http://127.0.0.1:3000' $(which bash)
 nix-store --store $PWD/test-root --extra-substituters 'http://localhost:3000' --option require-sigs false -r $(which bash)
 ```
 
-
 ## Telemetry
 
 The goal of Magic Nix Cache is to help teams save time in CI.
@@ -36,23 +35,23 @@ The cache daemon collects a little bit of telemetry information to help us make 
 
 Here is a table of the [telemetry data we collect][telemetry]:
 
-| Field                            | Use                                                                                                    |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `distinct_id`                    | An opaque string that represents your project, by sha256 hashing repository and organization details.  |
-| `version`                        | The version of Magic Nix Cache.                                                                        |
-| `is_ci`                          | Whether the Magic Nix Cache is being used in CI (i.e.: GitHub Actions).                                |
-| `elapsed_seconds`                | How long the cache daemon was running.                                                                 |
-| `narinfos_served`                | Number of narinfos served from the cache daemon.                                                       |
-| `narinfos_sent_upstream`         | Number of narinfo requests forwarded to the upstream cache.                                            |
-| `narinfos_negative_cache_hits`   | Effectiveness of an internal data structure which minimizes cache requests.                            |
-| `narinfos_negative_cache_misses` | Effectiveness of an internal data structure which minimizes cache requests.                            |
-| `narinfos_uploaded`              | Number of new narinfo files cached during this run.                                                    |
-| `nars_served`                    | Number of nars served from the cache daemon.                                                           |
-| `nars_sent_upstream`             | Number of nar requests forwarded to the upstream cache.                                                |
-| `nars_uploaded`                  | Number of nars uploaded during this run.                                                               |
-| `num_original_paths`             | Number of store paths that existed on startup.                                                         |
-| `num_final_paths`                | Number of store paths that existed on shutdown.                                                        |
-| `num_new_paths`                  | The diference between `num_original_paths` and `num_final_paths`.                                      |
+| Field                            | Use                                                                                                              |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `distinct_id`                    | An opaque string that represents your project, anonymized by sha256 hashing repository and organization details. |
+| `version`                        | The version of Magic Nix Cache.                                                                                  |
+| `is_ci`                          | Whether the Magic Nix Cache is being used in CI (i.e.: GitHub Actions).                                          |
+| `elapsed_seconds`                | How long the cache daemon was running.                                                                           |
+| `narinfos_served`                | Number of narinfos served from the cache daemon.                                                                 |
+| `narinfos_sent_upstream`         | Number of narinfo requests forwarded to the upstream cache.                                                      |
+| `narinfos_negative_cache_hits`   | Effectiveness of an internal data structure which minimizes cache requests.                                      |
+| `narinfos_negative_cache_misses` | Effectiveness of an internal data structure which minimizes cache requests.                                      |
+| `narinfos_uploaded`              | Number of new narinfo files cached during this run.                                                              |
+| `nars_served`                    | Number of nars served from the cache daemon.                                                                     |
+| `nars_sent_upstream`             | Number of nar requests forwarded to the upstream cache.                                                          |
+| `nars_uploaded`                  | Number of nars uploaded during this run.                                                                         |
+| `num_original_paths`             | Number of store paths that existed on startup.                                                                   |
+| `num_final_paths`                | Number of store paths that existed on shutdown.                                                                  |
+| `num_new_paths`                  | The diference between `num_original_paths` and `num_final_paths`.                                                |
 
 To disable diagnostic reporting, set the diagnostics URL to an empty string by passing `--diagnostic-endpoint=""`.
 
