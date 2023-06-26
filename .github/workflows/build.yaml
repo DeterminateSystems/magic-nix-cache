@@ -14,10 +14,10 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@v4
 
-      # - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Build package
-        run: "nix build .# -L"
+        run: "nix build .# -L --fallback"
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v3.1.2
@@ -39,7 +39,7 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Build package
-        run: "nix build .# -L"
+        run: "nix build .# -L --fallback"
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v3.1.2
