@@ -63,11 +63,20 @@ async fn workflow_finish(
     let sender = state.shutdown_sender.lock().await.take().unwrap();
     sender.send(()).unwrap();
 
-    Ok(Json(WorkflowFinishResponse {
+    let reply = WorkflowFinishResponse {
         num_original_paths: original_paths.len(),
         num_final_paths: final_paths.len(),
         num_new_paths: new_paths.len(),
-    }))
+    };
+
+    state
+        .metrics
+        .num_original_paths
+        .set(reply.num_original_paths);
+    state.metrics.num_final_paths.set(reply.num_final_paths);
+    state.metrics.num_new_paths.set(reply.num_new_paths);
+
+    Ok(Json(reply))
 }
 
 fn make_store_uri(self_endpoint: &SocketAddr) -> String {
