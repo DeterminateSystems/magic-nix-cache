@@ -60,7 +60,8 @@ nix-store --store $PWD/test-root --extra-substituters 'http://localhost:3000' --
 
 ## Acknowledgement
 Magic Nix Cache is a collaboration with [Zhaofeng Li][zhaofeng].
-Zhaofeng is a major contributor to the Nix community, having authored [Attic][attic] and [Colmena][colmena]. We'd like to express our deep gratitude to Zhaofeng for his tremendous work on this project.
+Zhaofeng is a major contributor to the Nix community, having authored [Attic][attic] and [Colmena][colmena].
+We'd like to express our deep gratitude to Zhaofeng for his tremendous work on this project.
 
 ## Telemetry
 
