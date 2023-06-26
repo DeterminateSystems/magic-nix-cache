@@ -5,25 +5,27 @@ on:
   workflow_call:
 
 jobs:
-  # build-artifacts-X64-macOS:
-  #   runs-on: macos-12
-  #   steps:
-  #     - uses: actions/checkout@v3
+  build-artifacts-X64-macOS:
+    runs-on: macos-12
+    steps:
+      - uses: actions/checkout@v3
 
-  #     - uses: DeterminateSystems/flake-checker-action@v4
+      - uses: DeterminateSystems/flake-checker-action@v4
 
-  #     - uses: DeterminateSystems/nix-installer-action@v4
+      - uses: DeterminateSystems/nix-installer-action@v4
 
-  #     - name: Build package
-  #       run: "nix build .# -L"
+      - uses: DeterminateSystems/magic-nix-cache@main
 
-  #     - name: Upload a Build Artifact
-  #       uses: actions/upload-artifact@v3.1.2
-  #       with:
-  #         # Artifact name
-  #         name: magic-nix-cache-X64-macOS
-  #         path: result/bin/magic-nix-cache
-  #         retention-days: 1
+      - name: Build package
+        run: "nix build .# -L"
+
+      - name: Upload a Build Artifact
+        uses: actions/upload-artifact@v3.1.2
+        with:
+          # Artifact name
+          name: magic-nix-cache-X64-macOS
+          path: result/bin/magic-nix-cache
+          retention-days: 1
 
   build-artifacts-X64-Linux:
     runs-on: ubuntu-22.04
@@ -33,6 +35,8 @@ jobs:
       - uses: DeterminateSystems/flake-checker-action@v4
 
       - uses: DeterminateSystems/nix-installer-action@v4
+
+      - uses: DeterminateSystems/magic-nix-cache@main
 
       - name: Build package
         run: "nix build .# -L"
