@@ -3,6 +3,15 @@
 Save 30-50%+ of CI time without any effort or cost.
 Use Magic Nix Cache, a totally free and zero-configuration binary cache for Nix on GitHub Actions.
 
+Add our [GitHub Action][action] after installing Nix, in your workflow, like this:
+
+```yaml
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+```
+
+See [Usage](#usage) for a detailed example.
+
+## Why use the Magic Nix Cache?
 Magic Nix Cache uses the GitHub Actions [built-in cache][ghacache] to share builds between Workflow runs, and has many advantages over alternatives.
 
 1. Totally free: backed by GitHub Actions' cache, there is no additional service to pay for.
@@ -49,6 +58,11 @@ nix copy --to 'http://127.0.0.1:3000' $(which bash)
 nix-store --store $PWD/test-root --extra-substituters 'http://localhost:3000' --option require-sigs false -r $(which bash)
 ```
 
+## Acknowledgement
+Magic Nix Cache is a collaboration with [Zhaofeng Li][zhaofeng].
+Zhaofeng is a major contributor to the Nix community, having authored [Attic][attic] and [Colmena][colmena].
+We'd like to express our deep gratitude to Zhaofeng for his tremendous work on this project.
+
 ## Telemetry
 
 The goal of Magic Nix Cache is to help teams save time in CI.
@@ -78,9 +92,14 @@ To disable diagnostic reporting, set the diagnostics URL to an empty string by p
 
 You can read the full privacy policy for [Determinate Systems][detsys], the creators of this tool and the [Determinate Nix Installer][installer], [here][privacy].
 
+[detsys]: https://determinate.systems/
+[action]: https://github.com/DeterminateSystems/magic-nix-cache-action/
 [installer]: https://github.com/DeterminateSystems/nix-installer/
 [ghacache]: https://docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-up-workflows
 [privacy]: https://determinate.systems/privacy
-[telemetry]: https://github.com/DeterminateSystems/magic-nix-cache/blob/main/src/telemetry.rs
+[telemetry]: https://github.com/DeterminateSystems/magic-nix-cache/blob/main/magic-nix-cache/src/telemetry.rs
 [semantics]: https://docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-up-workflows#restrictions-for-accessing-a-cache
 [z2ncache]: https://zero-to-nix.com/concepts/caching#binary-caches
+[zhaofeng]: https://github.com/zhaofengli/
+[attic]: https://github.com/zhaofengli/attic
+[colmena]: https://github.com/zhaofengli/colmena
