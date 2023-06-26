@@ -56,16 +56,21 @@ async fn get_narinfo(
         .await
         .contains(&store_path_hash)
     {
+        state.metrics.narinfos_sent_upstream.incr();
+        state.metrics.narinfos_negative_cache_hits.incr();
         return pull_through(&state, &path);
     }
 
     if let Some(url) = state.api.get_file_url(&[&key]).await? {
+        state.metrics.narinfos_served.incr();
         return Ok(Redirect::temporary(&url));
     }
 
     let mut negative_cache = state.narinfo_nagative_cache.write().await;
     negative_cache.insert(store_path_hash);
 
+    state.metrics.narinfos_sent_upstream.incr();
+    state.metrics.narinfos_negative_cache_misses.incr();
     pull_through(&state, &path)
 }
 async fn put_narinfo(
@@ -90,6 +95,7 @@ async fn put_narinfo(
         body.map(|r| r.map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))),
     );
     state.api.upload_file(allocation, stream).await?;
+    state.metrics.narinfos_uploaded.incr();
 
     state
         .narinfo_nagative_cache
@@ -102,10 +108,12 @@ async fn put_narinfo(
 
 async fn get_nar(Extension(state): Extension<State>, Path(path): Path<String>) -> Result<Redirect> {
     if let Some(url) = state.api.get_file_url(&[&path]).await? {
+        state.metrics.nars_served.incr();
         return Ok(Redirect::temporary(&url));
     }
 
     if let Some(upstream) = &state.upstream {
+        state.metrics.nars_sent_upstream.incr();
         Ok(Redirect::temporary(&format!("{}/nar/{}", upstream, path)))
     } else {
         Err(Error::NotFound)
@@ -121,6 +129,7 @@ async fn put_nar(
         body.map(|r| r.map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))),
     );
     state.api.upload_file(allocation, stream).await?;
+    state.metrics.nars_uploaded.incr();
 
     Ok(())
 }

@@ -16,6 +16,7 @@
 mod api;
 mod binary_cache;
 mod error;
+mod telemetry;
 mod util;
 
 use std::collections::HashSet;
@@ -68,6 +69,16 @@ struct Args {
     #[arg(long)]
     upstream: Option<String>,
 
+    /// Diagnostic endpoint to send diagnostics and performance data.
+    ///
+    /// Set it to an empty string to disable reporting.
+    /// See the README for details.
+    #[arg(
+        long,
+        default_value = "https://install.determinate.systems/magic-nix-cache/perf"
+    )]
+    diagnostic_endpoint: String,
+
     /// Daemonize the server.
     ///
     /// This is for use in the GitHub Action only.
@@ -97,6 +108,9 @@ struct StateInner {
     ///
     /// This is used by our Action API to invoke `nix copy` to upload new paths.
     self_endpoint: SocketAddr,
+
+    /// Metrics for sending to perf at shutdown
+    metrics: telemetry::TelemetryReport,
 }
 
 fn main() {
@@ -115,6 +129,14 @@ fn main() {
             .expect("Failed to load credentials from environment (see README.md)")
     };
 
+    let diagnostic_endpoint = match args.diagnostic_endpoint.as_str() {
+        "" => {
+            tracing::info!("Diagnostics disabled.");
+            None
+        }
+        url => Some(url),
+    };
+
     let mut api = Api::new(credentials).expect("Failed to initialize GitHub Actions Cache API");
 
     if let Some(cache_version) = &args.cache_version {
@@ -130,6 +152,7 @@ fn main() {
         original_paths: Mutex::new(HashSet::new()),
         narinfo_nagative_cache: RwLock::new(HashSet::new()),
         self_endpoint: args.listen.to_owned(),
+        metrics: telemetry::TelemetryReport::new(),
     });
 
     let app = Router::new()
@@ -142,7 +165,7 @@ fn main() {
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .layer(axum::middleware::from_fn(dump_api_stats));
 
-    let app = app.layer(Extension(state));
+    let app = app.layer(Extension(state.clone()));
 
     if args.daemon_dir.is_some() {
         let dir = args.daemon_dir.as_ref().unwrap();
@@ -159,14 +182,18 @@ fn main() {
     let rt = Runtime::new().unwrap();
     rt.block_on(async move {
         tracing::info!("Listening on {}", args.listen);
-        axum::Server::bind(&args.listen)
+        let ret = axum::Server::bind(&args.listen)
             .serve(app.into_make_service())
             .with_graceful_shutdown(async move {
                 shutdown_receiver.await.ok();
                 tracing::info!("Shutting down");
             })
-            .await
-            .unwrap()
+            .await;
+
+        if let Some(diagnostic_endpoint) = diagnostic_endpoint {
+            state.metrics.send(diagnostic_endpoint);
+        }
+        ret.unwrap()
     });
 }
 
