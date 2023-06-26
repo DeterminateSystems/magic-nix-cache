@@ -19,8 +19,10 @@ jobs:
         with:
           fail-mode: true
 
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
       - name: Check Rust formatting
         run: nix develop --command cargo fmt --check
-      
+
       - name: Clippy
         run: nix develop --command cargo clippy
