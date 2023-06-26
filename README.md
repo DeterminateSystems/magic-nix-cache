@@ -55,8 +55,9 @@ Here is a table of the [telemetry data we collect][telemetry]:
 
 To disable diagnostic reporting, set the diagnostics URL to an empty string by passing `--diagnostic-endpoint=""`.
 
-You can read the full privacy policy for [Determinate Systems][detsys], the creators of this tool and the Magic Nix Cache, [here][privacy].
+You can read the full privacy policy for [Determinate Systems][detsys], the creators of this tool and the [Determinate Nix Installer][installer], [here][privacy].
 
+[installer]: https://github.com/DeterminateSystems/nix-installer/
 [ghacache]: https://docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-up-workflows
 [privacy]: https://determinate.systems/privacy
 [telemetry]: https://github.com/DeterminateSystems/magic-nix-cache/blob/main/src/telemetry.rs
