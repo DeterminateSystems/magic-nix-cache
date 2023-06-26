@@ -11,7 +11,7 @@ Magix Nix Cache uses the GitHub Actions [built-in cache][ghacache] to share buil
 1. Secure: Magic Nix Cache follows the [same semantics as the GitHub Actions cache][semantics], and malicious pull requests cannot pollute your project.
 1. Private: The cache is stored in the GitHub Actions cache, not with an additional third party.
 
-**Note:** the Magic Nix Cache doesn't offer a publically available cache.
+> **Note:** the Magic Nix Cache doesn't offer a publically available cache.
 This means the cache is only usable in CI.
 Zero to Nix has an article on binary caching if you want to [share Nix builds][z2ncache] with users outside of CI.
 
