@@ -107,6 +107,31 @@ struct StateInner {
     ///
     /// This is used by our Action API to invoke `nix copy` to upload new paths.
     self_endpoint: SocketAddr,
+
+    /// Metrics for sending to perf at shutdown
+    metrics: Metrics,
+}
+
+/// The global server state.
+#[derive(Debug, Default)]
+struct Metrics {
+    narinfos_served: Metric,
+    narinfos_sent_upstream: Metric,
+    narinfos_negative_cache_hits: Metric,
+    narinfos_negative_cache_misses: Metric,
+    narinfos_uploaded: Metric,
+
+    nars_served: Metric,
+    nars_sent_upstream: Metric,
+    nars_uploaded: Metric,
+}
+
+#[derive(Debug, Default)]
+struct Metric(std::sync::atomic::AtomicUsize);
+impl Metric {
+    fn incr(&self) -> () {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 fn main() {
@@ -149,6 +174,9 @@ fn main() {
         original_paths: Mutex::new(HashSet::new()),
         narinfo_nagative_cache: RwLock::new(HashSet::new()),
         self_endpoint: args.listen.to_owned(),
+        metrics: Metrics {
+            ..Default::default()
+        },
     });
 
     let app = Router::new()
