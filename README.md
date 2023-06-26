@@ -3,7 +3,7 @@
 Save 30-50%+ of CI time without any effort or cost.
 Use Magic Nix Cache, a totally free and zero-configuration binary cache for Nix on GitHub Actions.
 
-Magix Nix Cache uses the GitHub Actions [built-in cache][ghacache] to share builds between Workflow runs, adn has many advantages over alternatives.
+Magix Nix Cache uses the GitHub Actions [built-in cache][ghacache] to share builds between Workflow runs, and has many advantages over alternatives.
 
 1. Totally free: backed by GitHub Actions' cache, there is no additional service to pay for.
 1. Zero configuration: add our action to your workflow. That's it.
