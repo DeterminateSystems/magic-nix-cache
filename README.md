@@ -6,12 +6,13 @@ Use Magic Nix Cache, a totally free and zero-configuration binary cache for Nix 
 Add our [GitHub Action][action] after installing Nix, in your workflow, like this:
 
 ```yaml
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+- uses: DeterminateSystems/magic-nix-cache-action@main
 ```
 
 See [Usage](#usage) for a detailed example.
 
 ## Why use the Magic Nix Cache?
+
 Magic Nix Cache uses the GitHub Actions [built-in cache][ghacache] to share builds between Workflow runs, and has many advantages over alternatives.
 
 1. Totally free: backed by GitHub Actions' cache, there is no additional service to pay for.
@@ -20,9 +21,9 @@ Magic Nix Cache uses the GitHub Actions [built-in cache][ghacache] to share buil
 1. Secure: Magic Nix Cache follows the [same semantics as the GitHub Actions cache][semantics], and malicious pull requests cannot pollute your project.
 1. Private: The cache is stored in the GitHub Actions cache, not with an additional third party.
 
-> **Note:** the Magic Nix Cache doesn't offer a publically available cache.
+> **Note:** the Magic Nix Cache doesn't offer a publicly available cache.
 > This means the cache is only usable in CI.
-> Zero to Nix has an article on binary caching if you want to [share Nix builds][z2ncache] with users outside of CI.
+> [Zero to Nix][z2n] has an article on binary caching if you want to [share Nix builds][z2ncache] with users outside of CI.
 
 ## Usage
 
@@ -50,7 +51,7 @@ jobs:
 This project depends on the GitHub Actions Cache API.
 For local development, see `gha-cache/README.md` for more details on how to obtain the required tokens.
 
-```
+```shell
 cargo run -- -c creds.json --upstream https://cache.nixos.org
 cargo build --release --target x86_64-unknown-linux-musl
 cargo build --release --target aarch64-unknown-linux-musl
@@ -59,6 +60,7 @@ nix-store --store $PWD/test-root --extra-substituters 'http://localhost:3000' --
 ```
 
 ## Acknowledgement
+
 Magic Nix Cache is a collaboration with [Zhaofeng Li][zhaofeng].
 Zhaofeng is a major contributor to the Nix community, having authored [Attic][attic] and [Colmena][colmena].
 We'd like to express our deep gratitude to Zhaofeng for his tremendous work on this project.
@@ -103,3 +105,5 @@ You can read the full privacy policy for [Determinate Systems][detsys], the crea
 [zhaofeng]: https://github.com/zhaofengli/
 [attic]: https://github.com/zhaofengli/attic
 [colmena]: https://github.com/zhaofengli/colmena
+[z2n]: https://zero-to-nix.com
+
