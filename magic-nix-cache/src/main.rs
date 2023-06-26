@@ -75,7 +75,7 @@ struct Args {
     /// See the README for details.
     #[arg(
         long,
-        default_value = "https://install.determinate.systems/nix-actions-cache/perf"
+        default_value = "https://install.determinate.systems/magic-nix-cache/perf"
     )]
     diagnostic_endpoint: String,
 
