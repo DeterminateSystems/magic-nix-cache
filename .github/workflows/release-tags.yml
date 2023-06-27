@@ -55,4 +55,3 @@ jobs:
           draft: true
           files: |
             artifacts/**
-            nix-installer.sh
