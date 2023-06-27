@@ -29,7 +29,7 @@ jobs:
           retention-days: 1
 
       - name: Delay to experiment on macOS
-        run: "sleep 5m"
+        run: "sleep 300"
 
 
   build-artifacts-X64-Linux:
