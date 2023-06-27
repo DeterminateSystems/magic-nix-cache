@@ -91,17 +91,27 @@ let
 
         cargoExtraArgs = "--target ${crossPlatform.rustTargetSpec}";
 
-        cargoVendorDir = craneLib.vendorMultipleCargoDeps {
-          inherit (craneLib.findCargoFiles src) cargoConfigs;
-          cargoLockList = [
-            ./Cargo.lock
-            "${rustNightly.passthru.availableComponents.rust-src}/lib/rustlib/src/rust/Cargo.lock"
-          ];
-        };
+        cargoVendorDir = let
+          orig = craneLib.vendorMultipleCargoDeps {
+            inherit (craneLib.findCargoFiles src) cargoConfigs;
+            cargoLockList = [
+              ./Cargo.lock
+              "${rustNightly.passthru.availableComponents.rust-src}/lib/rustlib/src/rust/Cargo.lock"
+            ];
+          };
+        in pkgs.runCommandLocal "${orig.name}-deref" {} ''
+          cp -rL ${orig} $out
+          chmod u+w $out
+          sed -i "s|${orig.outPath}|$out|g" "$out/config.toml"
+        '';
       } // crossPlatform.env;
 
+      cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
+        installCargoArtifactsMode = "use-zstd";
+      });
+
       crate = craneLib.buildPackage (commonArgs // {
-        cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+        inherit cargoArtifacts;
 
         # The resulting executable must be standalone
         allowedRequisites = [ ];

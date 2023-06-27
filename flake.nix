@@ -10,7 +10,7 @@
     };
 
     crane = {
-      url = "github:ipetkov/crane";
+      url = "github:zhaofengli/crane/mangled-artifacts";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-compat.follows = "flake-compat";
     };
