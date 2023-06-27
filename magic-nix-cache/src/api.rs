@@ -17,6 +17,8 @@ struct WorkflowStartResponse {
     num_original_paths: usize,
 }
 
+// bogus change
+
 #[derive(Debug, Clone, Serialize)]
 struct WorkflowFinishResponse {
     num_original_paths: usize,
