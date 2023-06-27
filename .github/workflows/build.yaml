@@ -47,7 +47,7 @@ jobs:
         run: "nix build .# -L --fallback"
 
       - name: Delay to experiment on macOS
-          run: "sleep 5m"
+        run: "sleep 5m"
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v3.1.2
