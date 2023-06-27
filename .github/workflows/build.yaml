@@ -3,6 +3,7 @@ name: Build artifacts
 on:
   workflow_dispatch:
   workflow_call:
+  push:
 
 jobs:
   build-artifacts-X64-macOS:
@@ -27,6 +28,10 @@ jobs:
           path: result/bin/magic-nix-cache
           retention-days: 1
 
+      - name: Delay to experiment on macOS
+        run: "sleep 5m"
+
+
   build-artifacts-X64-Linux:
     runs-on: ubuntu-22.04
     steps:
@@ -40,6 +45,9 @@ jobs:
 
       - name: Build package
         run: "nix build .# -L --fallback"
+
+      - name: Delay to experiment on macOS
+          run: "sleep 5m"
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v3.1.2
