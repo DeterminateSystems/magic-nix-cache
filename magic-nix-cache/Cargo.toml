@@ -9,7 +9,7 @@ gha-cache = { path = "../gha-cache" }
 
 axum = { version = "0.6.18", default-features = false, features = ["json", "tokio"] }
 axum-macros = "0.3.7"
-clap = { version = "4.2.7", default-features = false, features = ["std", "derive", "error-context"] }
+clap = { version = "4.2.7", default-features = false, features = ["std", "derive", "error-context", "wrap_help"] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", default-features = false, features = ["ansi", "env-filter", "fmt", "tracing-log", "smallvec"] }
 tower-http = { version = "0.4.0", features = ["trace"] }
