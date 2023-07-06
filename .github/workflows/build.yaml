@@ -6,6 +6,7 @@ on:
 
 jobs:
   build-artifacts-X64-macOS:
+    concurrency: build-X64-macOS
     runs-on: macos-12
     steps:
       - uses: actions/checkout@v3
@@ -28,6 +29,7 @@ jobs:
           retention-days: 1
 
   build-artifacts-X64-Linux:
+    concurrency: build-X64-Linux
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
