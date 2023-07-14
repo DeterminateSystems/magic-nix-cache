@@ -12,14 +12,13 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v4
+        uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Check health of flake.lock
-        uses: DeterminateSystems/flake-checker-action@v4
+        uses: DeterminateSystems/flake-checker-action@main
         with:
           fail-mode: true
-
-      - uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Check Rust formatting
         run: nix develop --command cargo fmt --check
