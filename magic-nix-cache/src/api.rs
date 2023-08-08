@@ -56,9 +56,25 @@ async fn workflow_finish(
         .cloned()
         .collect::<Vec<_>>();
 
-    tracing::info!("Pushing {} new paths", new_paths.len());
-    let store_uri = make_store_uri(&state.self_endpoint);
-    upload_paths(new_paths.clone(), &store_uri).await?;
+    let max_attempts = 10;
+    let mut delay_secs = 0;
+    for attempt in 0..max_attempts {
+        tokio::time::sleep(tokio::time::Duration::from_secs(delay_secs)).await;
+        tracing::info!("Pushing {} new paths (attempt {attempt})", new_paths.len());
+        let store_uri = make_store_uri(&state.self_endpoint);
+        match upload_paths(new_paths.clone(), &store_uri).await {
+            Ok(()) => break,
+            Err(crate::error::Error::FailedToUpload) => {
+                delay_secs += 5;
+                tracing::error!(
+                    "Upload failure, delaying {delay_secs} seconds and trying again ..."
+                );
+            }
+            Err(e) => {
+                tracing::error!("Unexpected error {e}, not retrying");
+            }
+        }
+    }
 
     let sender = state.shutdown_sender.lock().await.take().unwrap();
     sender.send(()).unwrap();
