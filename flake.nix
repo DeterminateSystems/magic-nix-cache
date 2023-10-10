@@ -2,7 +2,7 @@
   description = "GitHub Actions-powered Nix binary cache";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1.533189.tar.gz";
 
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
@@ -10,15 +10,12 @@
     };
 
     crane = {
-      url = "github:ipetkov/crane";
+      url = "https://flakehub.com/f/ipetkov/crane/0.14.1.tar.gz";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-compat.follows = "flake-compat";
     };
 
-    flake-compat = {
-      url = "github:edolstra/flake-compat";
-      flake = false;
-    };
+    flake-compat.url = "https://flakehub.com/f/edolstra/flake-compat/1.0.1.tar.gz";
   };
 
   outputs = { self, nixpkgs, ... }@inputs:
