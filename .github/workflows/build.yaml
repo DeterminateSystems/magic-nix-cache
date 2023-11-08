@@ -5,6 +5,29 @@ on:
   workflow_call:
 
 jobs:
+  build-artifacts-ARM64-macOS:
+    concurrency: build-ARM64-macOS
+    runs-on: macos-latest-xlarge
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: DeterminateSystems/flake-checker-action@main
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Build package
+        run: "nix build .# -L --fallback"
+
+      - name: Upload a Build Artifact
+        uses: actions/upload-artifact@v3.1.2
+        with:
+          # Artifact name
+          name: magic-nix-cache-ARM64-macOS
+          path: result/bin/magic-nix-cache
+          retention-days: 1
+
   build-artifacts-X64-macOS:
     concurrency: build-X64-macOS
     runs-on: macos-12
