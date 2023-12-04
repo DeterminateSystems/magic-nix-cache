@@ -73,7 +73,7 @@ jobs:
           retention-days: 1
 
   build-artifacts-ARM64-Linux:
-    concurrency: build-X64-Linux
+    concurrency: build-ARM64-Linux
     runs-on: namespace-profile-default-arm64
     steps:
       - uses: actions/checkout@v3
