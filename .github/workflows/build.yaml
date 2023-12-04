@@ -6,7 +6,6 @@ on:
 
 jobs:
   build-artifacts-ARM64-macOS:
-    concurrency: build-ARM64-macOS
     runs-on: macos-latest-xlarge
     steps:
       - uses: actions/checkout@v3
@@ -27,7 +26,6 @@ jobs:
           retention-days: 1
 
   build-artifacts-X64-macOS:
-    concurrency: build-X64-macOS
     runs-on: macos-12
     steps:
       - uses: actions/checkout@v3
@@ -50,7 +48,6 @@ jobs:
           retention-days: 1
 
   build-artifacts-X64-Linux:
-    concurrency: build-X64-Linux
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
@@ -73,16 +70,15 @@ jobs:
           retention-days: 1
 
   build-artifacts-ARM64-Linux:
-    concurrency: build-ARM64-Linux
     runs-on: namespace-profile-default-arm64
     steps:
       - uses: actions/checkout@v3
 
-      # - uses: DeterminateSystems/flake-checker-action@main
+      - uses: DeterminateSystems/flake-checker-action@main
 
       - uses: DeterminateSystems/nix-installer-action@main
 
-      # - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Build package
         run: "nix build .# -L --fallback"
