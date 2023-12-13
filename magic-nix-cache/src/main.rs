@@ -21,21 +21,16 @@ mod telemetry;
 mod util;
 
 use std::collections::HashSet;
-use std::fs::{self, create_dir_all, File, OpenOptions};
+use std::fs::{self, create_dir_all, OpenOptions};
 use std::io::Write;
 use std::net::SocketAddr;
-use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ::attic::nix_store::NixStore;
 use axum::{extract::Extension, routing::get, Router};
 use clap::Parser;
-use daemonize::Daemonize;
-use tokio::{
-    runtime::Runtime,
-    sync::{oneshot, Mutex, RwLock},
-};
+use tokio::sync::{oneshot, Mutex, RwLock};
 use tracing_subscriber::filter::EnvFilter;
 
 use gha_cache::{Api, Credentials};
@@ -81,12 +76,6 @@ struct Args {
         default_value = "https://install.determinate.systems/magic-nix-cache/perf"
     )]
     diagnostic_endpoint: String,
-
-    /// Daemonize the server.
-    ///
-    /// This is for use in the GitHub Action only.
-    #[arg(long, hide = true)]
-    daemon_dir: Option<PathBuf>,
 
     /// The FlakeHub API server.
     #[arg(long)]
@@ -142,10 +131,10 @@ struct StateInner {
     store: Arc<NixStore>,
 
     /// FlakeHub cache state.
-    flakehub_state: Option<flakehub::State>,
+    flakehub_state: RwLock<Option<flakehub::State>>,
 }
 
-fn main() {
+async fn main_cli() {
     init_logging();
 
     let args = Args::parse();
@@ -169,18 +158,16 @@ fn main() {
             .flakehub_api_server_netrc
             .expect("--flakehub-api-server-netrc is required");
 
-        let rt = Runtime::new().unwrap();
-
-        match rt.block_on(async {
-            flakehub::init_cache(
-                &args
-                    .flakehub_api_server
-                    .expect("--flakehub-api-server is required"),
-                &flakehub_api_server_netrc,
-                &flakehub_cache_server,
-            )
-            .await
-        }) {
+        match flakehub::init_cache(
+            &args
+                .flakehub_api_server
+                .expect("--flakehub-api-server is required"),
+            &flakehub_api_server_netrc,
+            &flakehub_cache_server,
+            store.clone(),
+        )
+        .await
+        {
             Ok(state) => {
                 nix_conf
                     .write_all(
@@ -236,7 +223,15 @@ fn main() {
     };
 
     nix_conf
-        .write_all("fallback = true\n".as_bytes())
+        .write_all(
+            format!(
+                "fallback = true\npost-build-hook = {}\n",
+                std::env::current_exe()
+                    .expect("Getting the path of magic-nix-cache")
+                    .display()
+            )
+            .as_bytes(),
+        )
         .expect("Writing to nix.conf");
 
     drop(nix_conf);
@@ -260,7 +255,7 @@ fn main() {
         self_endpoint: args.listen.to_owned(),
         metrics: telemetry::TelemetryReport::new(),
         store,
-        flakehub_state,
+        flakehub_state: RwLock::new(flakehub_state),
     });
 
     let app = Router::new()
@@ -275,35 +270,54 @@ fn main() {
 
     let app = app.layer(Extension(state.clone()));
 
-    if args.daemon_dir.is_some() {
-        let dir = args.daemon_dir.as_ref().unwrap();
-        let logfile: OwnedFd = File::create(dir.join("daemon.log")).unwrap().into();
-        let daemon = Daemonize::new()
-            .pid_file(dir.join("daemon.pid"))
-            .stdout(File::from(logfile.try_clone().unwrap()))
-            .stderr(File::from(logfile));
+    tracing::info!("Listening on {}", args.listen);
+    let ret = axum::Server::bind(&args.listen)
+        .serve(app.into_make_service())
+        .with_graceful_shutdown(async move {
+            shutdown_receiver.await.ok();
+            tracing::info!("Shutting down");
+        })
+        .await;
 
-        tracing::info!("Forking into the background");
-        daemon.start().expect("Failed to fork into the background");
+    if let Some(diagnostic_endpoint) = diagnostic_endpoint {
+        state.metrics.send(diagnostic_endpoint).await;
     }
 
-    let rt = Runtime::new().unwrap();
-    rt.block_on(async move {
-        tracing::info!("Listening on {}", args.listen);
-        let ret = axum::Server::bind(&args.listen)
-            .serve(app.into_make_service())
-            .with_graceful_shutdown(async move {
-                shutdown_receiver.await.ok();
-                tracing::info!("Shutting down");
+    ret.unwrap()
+}
 
-                if let Some(diagnostic_endpoint) = diagnostic_endpoint {
-                    state.metrics.send(diagnostic_endpoint).await;
-                }
-            })
-            .await;
+async fn post_build_hook(out_paths: &str) {
+    let store_paths: Vec<_> = out_paths.lines().map(str::to_owned).collect();
 
-        ret.unwrap()
-    });
+    let request = api::EnqueuePathsRequest { store_paths };
+
+    let response = reqwest::Client::new()
+        .post(format!(
+            "http://{}/api/enqueue-paths",
+            std::env::var("INPUT_LISTEN").unwrap_or_else(|_| "127.0.0.1:37515".to_owned())
+        ))
+        .header("Content-Type", "application/json")
+        .body(serde_json::to_string(&request).unwrap())
+        .send()
+        .await
+        .unwrap();
+
+    if !response.status().is_success() {
+        eprintln!(
+            "magic-nix-cache server failed to enqueue the push request: {}",
+            response.status()
+        );
+    } else {
+        response.json::<api::EnqueuePathsResponse>().await.unwrap();
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    match std::env::var("OUT_PATHS") {
+        Ok(out_paths) => post_build_hook(&out_paths).await,
+        Err(_) => main_cli().await,
+    }
 }
 
 fn init_logging() {

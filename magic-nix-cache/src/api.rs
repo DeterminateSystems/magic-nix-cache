@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 
 use axum::{extract::Extension, http::uri::Uri, routing::post, Json, Router};
 use axum_macros::debug_handler;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::State;
 use crate::error::Result;
@@ -28,6 +28,7 @@ pub fn get_router() -> Router {
     Router::new()
         .route("/api/workflow-start", post(workflow_start))
         .route("/api/workflow-finish", post(workflow_finish))
+        .route("/api/enqueue-paths", post(enqueue_paths))
 }
 
 /// Record existing paths.
@@ -62,19 +63,13 @@ async fn workflow_finish(
         upload_paths(new_paths.clone(), &store_uri).await?;
     }
 
-    if let Some(attic_state) = &state.flakehub_state {
-        tracing::info!("Pushing {} new paths to Attic", new_paths.len());
-
-        let new_paths = new_paths
-            .iter()
-            .map(|path| state.store.follow_store_path(path).unwrap())
-            .collect();
-
-        crate::flakehub::push(attic_state, state.store.clone(), new_paths).await?;
-    }
-
     let sender = state.shutdown_sender.lock().await.take().unwrap();
     sender.send(()).unwrap();
+
+    // Wait for the Attic push workers to finish.
+    if let Some(attic_state) = state.flakehub_state.write().await.take() {
+        attic_state.push_session.wait().await.unwrap();
+    }
 
     let reply = WorkflowFinishResponse {
         num_original_paths: original_paths.len(),
@@ -100,4 +95,32 @@ fn make_store_uri(self_endpoint: &SocketAddr) -> String {
         .build()
         .unwrap()
         .to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnqueuePathsRequest {
+    pub store_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnqueuePathsResponse {}
+
+/// Schedule paths in the local Nix store for uploading.
+async fn enqueue_paths(
+    Extension(state): Extension<State>,
+    Json(req): Json<EnqueuePathsRequest>,
+) -> Result<Json<EnqueuePathsResponse>> {
+    tracing::info!("Enqueueing {:?}", req.store_paths);
+
+    let store_paths: Vec<_> = req
+        .store_paths
+        .iter()
+        .map(|path| state.store.follow_store_path(path).unwrap())
+        .collect();
+
+    if let Some(flakehub_state) = &*state.flakehub_state.read().await {
+        crate::flakehub::enqueue_paths(flakehub_state, store_paths).await.unwrap();
+    }
+
+    Ok(Json(EnqueuePathsResponse {}))
 }
