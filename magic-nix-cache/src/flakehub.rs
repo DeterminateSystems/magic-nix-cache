@@ -256,10 +256,7 @@ pub async fn init_cache(
     })
 }
 
-pub async fn enqueue_paths(
-    state: &State,
-    store_paths: Vec<StorePath>,
-) -> Result<()> {
+pub async fn enqueue_paths(state: &State, store_paths: Vec<StorePath>) -> Result<()> {
     state.push_session.queue_many(store_paths).unwrap();
 
     Ok(())
