@@ -2,7 +2,6 @@
     asm_sub_register,
     deprecated,
     missing_abi,
-    unsafe_code,
     unused_macros,
     unused_must_use,
     unused_unsafe
@@ -24,6 +23,7 @@ use std::collections::HashSet;
 use std::fs::{self, create_dir_all, OpenOptions};
 use std::io::Write;
 use std::net::SocketAddr;
+use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -100,6 +100,10 @@ struct Args {
     /// Whether to use the FlakeHub binary cache.
     #[arg(long)]
     use_flakehub: bool,
+
+    /// File descriptor on which to send startup notification.
+    #[arg(long)]
+    notify_fd: Option<i32>,
 }
 
 /// The global server state.
@@ -271,6 +275,12 @@ async fn main_cli() {
     let app = app.layer(Extension(state.clone()));
 
     tracing::info!("Listening on {}", args.listen);
+
+    if let Some(notify_fd) = args.notify_fd {
+        let mut f = unsafe { std::fs::File::from_raw_fd(notify_fd) };
+        write!(&mut f, "INIT\n").unwrap();
+    }
+
     let ret = axum::Server::bind(&args.listen)
         .serve(app.into_make_service())
         .with_graceful_shutdown(async move {
@@ -332,6 +342,7 @@ fn init_logging() {
     });
 
     tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .pretty()
         .with_env_filter(filter)
         .init();
