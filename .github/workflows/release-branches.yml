@@ -10,6 +10,7 @@ on:
 jobs:
   build:
     uses: ./.github/workflows/build.yaml
+    secrets: inherit
 
   release:
     needs: build
