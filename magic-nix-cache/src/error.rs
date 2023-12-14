@@ -24,6 +24,9 @@ pub enum Error {
 
     #[error("Failed to upload paths")]
     FailedToUpload,
+
+    #[error("GHA cache is disabled")]
+    GHADisabled,
 }
 
 impl IntoResponse for Error {

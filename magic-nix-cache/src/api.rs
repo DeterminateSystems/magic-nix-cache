@@ -36,7 +36,7 @@ async fn workflow_start(Extension(state): Extension<State>) -> Result<Json<Workf
     tracing::info!("Workflow started");
 
     let mut original_paths = state.original_paths.lock().await;
-    *original_paths = get_store_paths().await?;
+    *original_paths = get_store_paths(&state.store).await?;
 
     Ok(Json(WorkflowStartResponse {
         num_original_paths: original_paths.len(),
@@ -50,15 +50,28 @@ async fn workflow_finish(
     tracing::info!("Workflow finished");
 
     let original_paths = state.original_paths.lock().await;
-    let final_paths = get_store_paths().await?;
+    let final_paths = get_store_paths(&state.store).await?;
     let new_paths = final_paths
         .difference(&original_paths)
         .cloned()
         .collect::<Vec<_>>();
 
-    tracing::info!("Pushing {} new paths", new_paths.len());
-    let store_uri = make_store_uri(&state.self_endpoint);
-    upload_paths(new_paths.clone(), &store_uri).await?;
+    if state.api.is_some() {
+        tracing::info!("Pushing {} new paths to GHA cache", new_paths.len());
+        let store_uri = make_store_uri(&state.self_endpoint);
+        upload_paths(new_paths.clone(), &store_uri).await?;
+    }
+
+    if let Some(attic_state) = &state.flakehub_state {
+        tracing::info!("Pushing {} new paths to Attic", new_paths.len());
+
+        let new_paths = new_paths
+            .iter()
+            .map(|path| state.store.follow_store_path(path).unwrap())
+            .collect();
+
+        crate::flakehub::push(attic_state, state.store.clone(), new_paths).await?;
+    }
 
     let sender = state.shutdown_sender.lock().await.take().unwrap();
     sender.send(()).unwrap();

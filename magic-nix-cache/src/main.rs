@@ -16,16 +16,19 @@
 mod api;
 mod binary_cache;
 mod error;
+mod flakehub;
 mod telemetry;
 mod util;
 
 use std::collections::HashSet;
-use std::fs::{self, File};
+use std::fs::{self, create_dir_all, File, OpenOptions};
+use std::io::Write;
 use std::net::SocketAddr;
 use std::os::fd::OwnedFd;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use ::attic::nix_store::NixStore;
 use axum::{extract::Extension, routing::get, Router};
 use clap::Parser;
 use daemonize::Daemonize;
@@ -84,13 +87,36 @@ struct Args {
     /// This is for use in the GitHub Action only.
     #[arg(long, hide = true)]
     daemon_dir: Option<PathBuf>,
+
+    /// The FlakeHub API server.
+    #[arg(long)]
+    flakehub_api_server: Option<String>,
+
+    /// The path of the `netrc` file that contains the FlakeHub JWT token.
+    #[arg(long)]
+    flakehub_api_server_netrc: Option<PathBuf>,
+
+    /// The FlakeHub binary cache server.
+    #[arg(long)]
+    flakehub_cache_server: Option<String>,
+
+    /// The location of `nix.conf`.
+    #[arg(long)]
+    nix_conf: PathBuf,
+
+    /// Whether to use the GHA cache.
+    #[arg(long)]
+    use_gha_cache: bool,
+
+    /// Whether to use the FlakeHub binary cache.
+    #[arg(long)]
+    use_flakehub: bool,
 }
 
 /// The global server state.
-#[derive(Debug)]
 struct StateInner {
     /// The GitHub Actions Cache API.
-    api: Api,
+    api: Option<Api>,
 
     /// The upstream cache.
     upstream: Option<String>,
@@ -111,6 +137,12 @@ struct StateInner {
 
     /// Metrics for sending to perf at shutdown
     metrics: telemetry::TelemetryReport,
+
+    /// Connection to the local Nix store.
+    store: Arc<NixStore>,
+
+    /// FlakeHub cache state.
+    flakehub_state: Option<flakehub::State>,
 }
 
 fn main() {
@@ -118,16 +150,96 @@ fn main() {
 
     let args = Args::parse();
 
-    let credentials = if let Some(credentials_file) = &args.credentials_file {
-        tracing::info!("Loading credentials from {:?}", credentials_file);
-        let bytes = fs::read(credentials_file).expect("Failed to read credentials file");
+    create_dir_all(Path::new(&args.nix_conf).parent().unwrap())
+        .expect("Creating parent directories of nix.conf");
 
-        serde_json::from_slice(&bytes).expect("Failed to deserialize credentials file")
+    let mut nix_conf = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(args.nix_conf)
+        .expect("Opening nix.conf");
+
+    let store = Arc::new(NixStore::connect().expect("Connecting to the Nix store"));
+
+    let flakehub_state = if args.use_flakehub {
+        let flakehub_cache_server = args
+            .flakehub_cache_server
+            .expect("--flakehub-cache-server is required");
+        let flakehub_api_server_netrc = args
+            .flakehub_api_server_netrc
+            .expect("--flakehub-api-server-netrc is required");
+
+        let rt = Runtime::new().unwrap();
+
+        match rt.block_on(async {
+            flakehub::init_cache(
+                &args
+                    .flakehub_api_server
+                    .expect("--flakehub-api-server is required"),
+                &flakehub_api_server_netrc,
+                &flakehub_cache_server,
+            )
+            .await
+        }) {
+            Ok(state) => {
+                nix_conf
+                    .write_all(
+                        format!(
+                            "extra-substituters = {}?trusted=1\nnetrc-file = {}\n",
+                            &flakehub_cache_server,
+                            flakehub_api_server_netrc.display()
+                        )
+                        .as_bytes(),
+                    )
+                    .expect("Writing to nix.conf");
+
+                tracing::info!("Attic cache is enabled.");
+                Some(state)
+            }
+            Err(err) => {
+                tracing::error!("Attic cache initialization failed: {}", err);
+                None
+            }
+        }
     } else {
-        tracing::info!("Loading credentials from environment");
-        Credentials::load_from_env()
-            .expect("Failed to load credentials from environment (see README.md)")
+        tracing::info!("Attic cache is disabled.");
+        None
     };
+
+    let api = if args.use_gha_cache {
+        let credentials = if let Some(credentials_file) = &args.credentials_file {
+            tracing::info!("Loading credentials from {:?}", credentials_file);
+            let bytes = fs::read(credentials_file).expect("Failed to read credentials file");
+
+            serde_json::from_slice(&bytes).expect("Failed to deserialize credentials file")
+        } else {
+            tracing::info!("Loading credentials from environment");
+            Credentials::load_from_env()
+                .expect("Failed to load credentials from environment (see README.md)")
+        };
+
+        let mut api = Api::new(credentials).expect("Failed to initialize GitHub Actions Cache API");
+
+        if let Some(cache_version) = &args.cache_version {
+            api.mutate_version(cache_version.as_bytes());
+        }
+
+        nix_conf
+            .write_all(format!("extra-substituters = http://{}?trusted=1&compression=zstd&parallel-compression=true&priority=1\n", args.listen).as_bytes())
+            .expect("Writing to nix.conf");
+
+        tracing::info!("GitHub Action cache is enabled.");
+        Some(api)
+    } else {
+        tracing::info!("GitHub Action cache is disabled.");
+        None
+    };
+
+    nix_conf
+        .write_all("fallback = true\n".as_bytes())
+        .expect("Writing to nix.conf");
+
+    drop(nix_conf);
 
     let diagnostic_endpoint = match args.diagnostic_endpoint.as_str() {
         "" => {
@@ -136,12 +248,6 @@ fn main() {
         }
         url => Some(url),
     };
-
-    let mut api = Api::new(credentials).expect("Failed to initialize GitHub Actions Cache API");
-
-    if let Some(cache_version) = &args.cache_version {
-        api.mutate_version(cache_version.as_bytes());
-    }
 
     let (shutdown_sender, shutdown_receiver) = oneshot::channel();
 
@@ -153,6 +259,8 @@ fn main() {
         narinfo_nagative_cache: RwLock::new(HashSet::new()),
         self_endpoint: args.listen.to_owned(),
         metrics: telemetry::TelemetryReport::new(),
+        store,
+        flakehub_state,
     });
 
     let app = Router::new()
@@ -187,12 +295,13 @@ fn main() {
             .with_graceful_shutdown(async move {
                 shutdown_receiver.await.ok();
                 tracing::info!("Shutting down");
+
+                if let Some(diagnostic_endpoint) = diagnostic_endpoint {
+                    state.metrics.send(diagnostic_endpoint).await;
+                }
             })
             .await;
 
-        if let Some(diagnostic_endpoint) = diagnostic_endpoint {
-            state.metrics.send(diagnostic_endpoint);
-        }
         ret.unwrap()
     });
 }
@@ -220,7 +329,9 @@ async fn dump_api_stats<B>(
     request: axum::http::Request<B>,
     next: axum::middleware::Next<B>,
 ) -> axum::response::Response {
-    state.api.dump_stats();
+    if let Some(api) = &state.api {
+        api.dump_stats();
+    }
     next.run(request).await
 }
 

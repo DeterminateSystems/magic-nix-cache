@@ -11,6 +11,7 @@ on:
 jobs:
   build:
     uses: ./.github/workflows/build.yaml
+    secrets: inherit
 
   release:
     needs: build
@@ -19,7 +20,7 @@ jobs:
     # Only intra-repo PRs are allowed to have PR artifacts uploaded
     # We only want to trigger once the upload once in the case the upload label is added, not when any label is added
     if: |
-      github.event.pull_request.head.repo.full_name == 'DeterminateSystems/magic-nix-cache'
+      github.event.pull_request.head.repo.full_name == 'DeterminateSystems/magic-nix-cache-priv'
       && (
         (github.event.action == 'labeled' && github.event.label.name == 'upload to s3')
         || (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'upload to s3'))

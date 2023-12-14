@@ -61,9 +61,11 @@ async fn get_narinfo(
         return pull_through(&state, &path);
     }
 
-    if let Some(url) = state.api.get_file_url(&[&key]).await? {
-        state.metrics.narinfos_served.incr();
-        return Ok(Redirect::temporary(&url));
+    if let Some(api) = &state.api {
+        if let Some(url) = api.get_file_url(&[&key]).await? {
+            state.metrics.narinfos_served.incr();
+            return Ok(Redirect::temporary(&url));
+        }
     }
 
     let mut negative_cache = state.narinfo_nagative_cache.write().await;
@@ -88,13 +90,15 @@ async fn put_narinfo(
         return Err(Error::BadRequest);
     }
 
+    let api = state.api.as_ref().ok_or(Error::GHADisabled)?;
+
     let store_path_hash = components[0].to_string();
     let key = format!("{}.narinfo", store_path_hash);
-    let allocation = state.api.allocate_file_with_random_suffix(&key).await?;
+    let allocation = api.allocate_file_with_random_suffix(&key).await?;
     let stream = StreamReader::new(
         body.map(|r| r.map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))),
     );
-    state.api.upload_file(allocation, stream).await?;
+    api.upload_file(allocation, stream).await?;
     state.metrics.narinfos_uploaded.incr();
 
     state
@@ -107,7 +111,13 @@ async fn put_narinfo(
 }
 
 async fn get_nar(Extension(state): Extension<State>, Path(path): Path<String>) -> Result<Redirect> {
-    if let Some(url) = state.api.get_file_url(&[&path]).await? {
+    if let Some(url) = state
+        .api
+        .as_ref()
+        .ok_or(Error::GHADisabled)?
+        .get_file_url(&[&path])
+        .await?
+    {
         state.metrics.nars_served.incr();
         return Ok(Redirect::temporary(&url));
     }
@@ -124,11 +134,13 @@ async fn put_nar(
     Path(path): Path<String>,
     body: BodyStream,
 ) -> Result<()> {
-    let allocation = state.api.allocate_file_with_random_suffix(&path).await?;
+    let api = state.api.as_ref().ok_or(Error::GHADisabled)?;
+
+    let allocation = api.allocate_file_with_random_suffix(&path).await?;
     let stream = StreamReader::new(
         body.map(|r| r.map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))),
     );
-    state.api.upload_file(allocation, stream).await?;
+    api.upload_file(allocation, stream).await?;
     state.metrics.nars_uploaded.incr();
 
     Ok(())

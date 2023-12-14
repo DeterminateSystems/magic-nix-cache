@@ -3,13 +3,15 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use attic::nix_store::NixStore;
 use tokio::{fs, process::Command};
 
 use crate::error::{Error, Result};
 
 /// Returns the list of store paths that are currently present.
-pub async fn get_store_paths() -> Result<HashSet<PathBuf>> {
-    let store_dir = Path::new("/nix/store");
+pub async fn get_store_paths(store: &NixStore) -> Result<HashSet<PathBuf>> {
+    // FIXME: use the Nix API.
+    let store_dir = store.store_dir();
     let mut listing = fs::read_dir(store_dir).await?;
     let mut paths = HashSet::new();
     while let Some(entry) = listing.next_entry().await? {
@@ -18,7 +20,7 @@ pub async fn get_store_paths() -> Result<HashSet<PathBuf>> {
 
         if let Some(extension) = file_name.extension() {
             match extension.to_str() {
-                None | Some("drv") | Some("lock") => {
+                None | Some("drv") | Some("lock") | Some("chroot") => {
                     // Malformed or not interesting
                     continue;
                 }

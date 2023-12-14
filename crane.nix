@@ -6,6 +6,7 @@
 , rust-bin
 , nix-gitignore
 , supportedSystems
+, nix-flake
 }:
 
 let
@@ -32,7 +33,7 @@ let
             else
               import pkgs.path {
                 inherit system crossSystem;
-                overlays = [ ];
+                overlays = [ nix-flake.overlays.default ];
               };
 
           rustTargetSpec = rust.toRustTargetSpec pkgsCross.pkgsStatic.stdenv.hostPlatform;
@@ -66,10 +67,13 @@ let
   cargoTargets = lib.mapAttrsToList (_: p: p.rustTargetSpec) crossPlatforms;
   cargoCrossEnvs = lib.foldl (acc: p: acc // p.env) { } (builtins.attrValues crossPlatforms);
 
-  makeBuildInputs = pkgs: with pkgs; [ ]
+  makeBuildInputs = pkgs:
+    [ pkgs.nix
+      pkgs.boost # needed for clippy
+    ]
     ++ lib.optionals pkgs.stdenv.isDarwin [
-    darwin.apple_sdk.frameworks.Security
-    (libiconv.override { enableStatic = true; enableShared = false; })
+    pkgs.darwin.apple_sdk.frameworks.Security
+    (pkgs.libiconv.override { enableStatic = true; enableShared = false; })
   ];
 
   buildFor = system:
@@ -86,6 +90,8 @@ let
       commonArgs = {
         inherit (crateName) pname version;
         inherit src;
+
+        nativeBuildInputs = [ pkgs.pkg-config ];
 
         buildInputs = makeBuildInputs pkgs;
 
