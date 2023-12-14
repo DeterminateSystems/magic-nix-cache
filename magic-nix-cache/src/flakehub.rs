@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use attic::api::v1::cache_config::{CreateCacheRequest, KeypairConfig};
 use attic::cache::CacheSliceIdentifier;
 use attic::nix_store::{NixStore, StorePath};
@@ -20,8 +20,6 @@ const JWT_PREFIX: &str = "flakehub1_";
 const USER_AGENT: &str = "magic-nix-cache";
 
 pub struct State {
-    cache: CacheSliceIdentifier,
-
     pub substituter: String,
 
     pub push_session: PushSession,
@@ -250,14 +248,16 @@ pub async fn init_cache(
     });
 
     Ok(State {
-        cache,
         substituter: flakehub_cache_server.to_owned(),
         push_session,
     })
 }
 
 pub async fn enqueue_paths(state: &State, store_paths: Vec<StorePath>) -> Result<()> {
-    state.push_session.queue_many(store_paths).unwrap();
+    state
+        .push_session
+        .queue_many(store_paths)
+        .map_err(Error::FlakeHub)?;
 
     Ok(())
 }

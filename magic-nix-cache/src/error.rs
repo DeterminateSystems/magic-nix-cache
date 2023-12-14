@@ -27,6 +27,9 @@ pub enum Error {
 
     #[error("GHA cache is disabled")]
     GHADisabled,
+
+    #[error("FlakeHub cache error: {0}")]
+    FlakeHub(anyhow::Error),
 }
 
 impl IntoResponse for Error {

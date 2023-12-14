@@ -119,9 +119,7 @@ async fn enqueue_paths(
         .collect();
 
     if let Some(flakehub_state) = &*state.flakehub_state.read().await {
-        crate::flakehub::enqueue_paths(flakehub_state, store_paths)
-            .await
-            .unwrap();
+        crate::flakehub::enqueue_paths(flakehub_state, store_paths).await?;
     }
 
     Ok(Json(EnqueuePathsResponse {}))
