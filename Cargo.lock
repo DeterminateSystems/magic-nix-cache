@@ -128,7 +128,7 @@ dependencies = [
 [[package]]
 name = "attic"
 version = "0.2.0"
-source = "git+ssh://git@github.com/DeterminateSystems/attic-priv?branch=main#217cbe932ceb81f504621fead261edc792eb5e2c"
+source = "git+ssh://git@github.com/DeterminateSystems/attic-priv?branch=main#ce89f7b954b01b2bf6403c7d136c002730c550ce"
 dependencies = [
  "async-stream",
  "base64 0.21.2",
@@ -155,7 +155,7 @@ dependencies = [
 [[package]]
 name = "attic-client"
 version = "0.2.0"
-source = "git+ssh://git@github.com/DeterminateSystems/attic-priv?branch=main#217cbe932ceb81f504621fead261edc792eb5e2c"
+source = "git+ssh://git@github.com/DeterminateSystems/attic-priv?branch=main#ce89f7b954b01b2bf6403c7d136c002730c550ce"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -1314,6 +1314,7 @@ dependencies = [
 name = "magic-nix-cache"
 version = "0.1.1"
 dependencies = [
+ "anyhow",
  "attic",
  "attic-client",
  "axum",

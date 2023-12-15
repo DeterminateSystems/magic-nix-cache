@@ -1,7 +1,8 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use attic::api::v1::cache_config::{CreateCacheRequest, KeypairConfig};
 use attic::cache::CacheSliceIdentifier;
 use attic::nix_store::{NixStore, StorePath};
+use attic_client::push::{PushSession, PushSessionConfig};
 use attic_client::{
     api::{ApiClient, ApiError},
     config::ServerConfig,
@@ -19,17 +20,16 @@ const JWT_PREFIX: &str = "flakehub1_";
 const USER_AGENT: &str = "magic-nix-cache";
 
 pub struct State {
-    cache: CacheSliceIdentifier,
-
     pub substituter: String,
 
-    api: ApiClient,
+    pub push_session: PushSession,
 }
 
 pub async fn init_cache(
     flakehub_api_server: &str,
     flakehub_api_server_netrc: &Path,
     flakehub_cache_server: &str,
+    store: Arc<NixStore>,
 ) -> Result<State> {
     // Parse netrc to get the credentials for api.flakehub.com.
     let netrc = {
@@ -225,15 +225,7 @@ pub async fn init_cache(
         tracing::info!("Created cache {} on {}.", cache_name, flakehub_cache_server);
     }
 
-    Ok(State {
-        cache,
-        substituter: flakehub_cache_server.to_owned(),
-        api,
-    })
-}
-
-pub async fn push(state: &State, store: Arc<NixStore>, store_paths: Vec<StorePath>) -> Result<()> {
-    let cache_config = state.api.get_cache_config(&state.cache).await.unwrap();
+    let cache_config = api.get_cache_config(&cache).await.unwrap();
 
     let push_config = PushConfig {
         num_workers: 5, // FIXME: use number of CPUs?
@@ -242,37 +234,30 @@ pub async fn push(state: &State, store: Arc<NixStore>, store_paths: Vec<StorePat
 
     let mp = indicatif::MultiProgress::new();
 
-    let pusher = Pusher::new(
+    let push_session = Pusher::new(
         store.clone(),
-        state.api.clone(),
-        state.cache.to_owned(),
+        api.clone(),
+        cache.to_owned(),
         cache_config,
         mp,
         push_config,
-    );
+    )
+    .into_push_session(PushSessionConfig {
+        no_closure: false,
+        ignore_upstream_cache_filter: false,
+    });
 
-    let plan = pusher.plan(store_paths, false, false).await.unwrap();
+    Ok(State {
+        substituter: flakehub_cache_server.to_owned(),
+        push_session,
+    })
+}
 
-    for (_, path_info) in plan.store_path_map {
-        pusher.queue(path_info).await.unwrap();
-    }
-
-    let results = pusher.wait().await;
-
-    for (path, res) in &results {
-        if let Err(err) = res {
-            tracing::error!(
-                "Upload of {} failed: {}",
-                store.get_full_path(path).display(),
-                err
-            );
-        }
-    }
-
-    tracing::info!(
-        "Uploaded {} paths.",
-        results.iter().filter(|(_path, res)| res.is_ok()).count()
-    );
+pub async fn enqueue_paths(state: &State, store_paths: Vec<StorePath>) -> Result<()> {
+    state
+        .push_session
+        .queue_many(store_paths)
+        .map_err(Error::FlakeHub)?;
 
     Ok(())
 }
