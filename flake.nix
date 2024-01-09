@@ -2,7 +2,7 @@
   description = "GitHub Actions-powered Nix binary cache";
 
   inputs = {
-    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.2305.tar.gz";
+    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.2311.tar.gz";
 
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
