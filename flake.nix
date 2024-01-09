@@ -2,7 +2,7 @@
   description = "GitHub Actions-powered Nix binary cache";
 
   inputs = {
-    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.2305.tar.gz";
+    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.2311.tar.gz";
 
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
@@ -41,27 +41,7 @@
     in
     {
       packages = forEachSupportedSystem ({ pkgs, cranePkgs, ... }: rec {
-        magic-nix-cache = (pkgs.pkgsStatic.callPackage ./package.nix {
-          rustPlatform = pkgs.pkgsStatic.rustPackages_1_70.rustPlatform;
-          nix = pkgs.pkgsStatic.nix.overrideAttrs (old: {
-            patches = (old.patches or []) ++ [ ./nix.patch ];
-          });
-        }).overrideAttrs (old: {
-          nativeBuildInputs = (old.nativeBuildInputs or []) ++ [
-            pkgs.nukeReferences
-          ];
-
-          # Read by pkg_config crate (do some autodetection in build.rs?)
-          PKG_CONFIG_ALL_STATIC = "1";
-
-          "NIX_CFLAGS_LINK_${pkgs.pkgsStatic.stdenv.cc.suffixSalt}" = "-lc";
-          RUSTFLAGS = "-C relocation-model=static";
-
-          postFixup = (old.postFixup or "") + ''
-            rm -f $out/nix-support/propagated-build-inputs
-            nuke-refs $out/bin/magic-nix-cache
-          '';
-        });
+        magic-nix-cache = pkgs.callPackage ./package.nix { };
         #inherit (cranePkgs) magic-nix-cache;
         default = magic-nix-cache;
       });
