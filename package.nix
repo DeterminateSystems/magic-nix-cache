@@ -38,4 +38,8 @@ in rustPlatform.buildRustPackage rec {
 
   # Recursive Nix is not stable yet
   doCheck = false;
+
+  postFixup = ''
+    rm -f $out/nix-support/propagated-build-inputs
+  '';
 }
