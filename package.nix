@@ -36,6 +36,9 @@ in rustPlatform.buildRustPackage rec {
 
   ATTIC_DISTRIBUTOR = "attic";
 
+  # Hack to fix linking on macOS.
+  NIX_CFLAGS_LINK = lib.optionalString stdenv.isDarwin "-lc++abi";
+
   # Recursive Nix is not stable yet
   doCheck = false;
 
