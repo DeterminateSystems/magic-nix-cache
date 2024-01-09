@@ -26,7 +26,7 @@ jobs:
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
-          name: magic-nix-cache-ARM64-macOS.closure.xz
+          name: magic-nix-cache-ARM64-macOS
           path: magic-nix-cache.closure.xz
           retention-days: 1
 
@@ -53,7 +53,7 @@ jobs:
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
-          name: magic-nix-cache-X64-macOS.closure.xz
+          name: magic-nix-cache-X64-macOS
           path: magic-nix-cache.closure.xz
           retention-days: 1
 
@@ -80,6 +80,6 @@ jobs:
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
-          name: magic-nix-cache-X64-Linux.closure.xz
+          name: magic-nix-cache-X64-Linux
           path: magic-nix-cache.closure.xz
           retention-days: 1
