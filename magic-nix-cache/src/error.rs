@@ -34,8 +34,8 @@ pub enum Error {
     #[error("FlakeHub HTTP error: {0}")]
     FlakeHubHttp(#[from] reqwest::Error),
 
-    #[error("Got HTTP response {1} getting FlakeHub binary cache creation token from {0}: {2}")]
-    CacheCreation(reqwest::Url, reqwest::StatusCode, String),
+    #[error("Got HTTP response {0} getting the cache name from FlakeHub: {1}")]
+    GetCacheName(reqwest::StatusCode, String),
 
     #[error("netrc parse error: {0}")]
     Netrc(netrc_rs::Error),
@@ -43,20 +43,11 @@ pub enum Error {
     #[error("Cannot find netrc credentials for {0}")]
     MissingCreds(String),
 
-    #[error("Received bad JWT")]
-    BadJWT,
-
-    #[error("Received bad JWT token: {0}")]
-    JWTParsing(#[from] jwt::Error),
-
     #[error("Attic error: {0}")]
     Attic(#[from] attic::AtticError),
 
     #[error("Bad URL")]
     BadURL(reqwest::Url),
-
-    #[error("FlakeHub did not return any cache for the calling user")]
-    NoKnownCaches,
 }
 
 impl IntoResponse for Error {

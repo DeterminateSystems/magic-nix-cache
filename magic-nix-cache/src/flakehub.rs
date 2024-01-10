@@ -18,7 +18,6 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
-const JWT_PREFIX: &str = "flakehub1_";
 const USER_AGENT: &str = "magic-nix-cache";
 
 pub struct State {
@@ -99,86 +98,28 @@ pub async fn init_cache(
             .send()
             .await?;
 
-        if response.status().is_success() {
-            #[derive(Deserialize)]
-            struct ProjectInfo {
-                organization_uuid_v7: Uuid,
-                project_uuid_v7: Uuid,
-            }
-
-            let project_info = response.json::<ProjectInfo>().await?;
-
-            let cache_name = format!(
-                "{}:{}",
-                project_info.organization_uuid_v7, project_info.project_uuid_v7,
-            );
-
-            tracing::info!("Using cache {:?}.", cache_name);
-
-            cache_name
-        } else {
-            tracing::error!(
-                "Failed to get project info from {}: {}",
-                url,
-                response.status()
-            );
-
-            // As a fallback (if the project doesn't exist yet on
-            // FlakeHub), get the list of known caches for this user
-            // and use the oldest one. FIXME: this might not be a good
-            // idea.
-
-            // FIXME: we don't actually need this token. We just need
-            // to query the caches the user has access to.
-            let url = flakehub_api_server.join("cache/token").unwrap();
-
-            let request = reqwest::Client::new()
-                .post(url.to_owned())
-                .header("User-Agent", USER_AGENT)
-                .basic_auth(
-                    netrc_entry.login.as_ref().unwrap(),
-                    netrc_entry.password.as_ref(),
-                );
-
-            let response = request.send().await?;
-
-            if !response.status().is_success() {
-                return Err(Error::CacheCreation(
-                    url,
-                    response.status(),
-                    response.text().await?,
-                ));
-            }
-
-            #[derive(Deserialize)]
-            struct Response {
-                token: String,
-            }
-
-            let token = response.json::<Response>().await?.token;
-
-            // Parse the JWT to get the list of caches to which we have access.
-            let jwt = token.strip_prefix(JWT_PREFIX).ok_or(Error::BadJWT)?;
-            let jwt_parsed: jwt::Token<jwt::Header, serde_json::Map<String, serde_json::Value>, _> =
-                jwt::Token::parse_unverified(jwt)?;
-            let known_caches = jwt_parsed
-                .claims()
-                .get("https://cache.flakehub.com/v1")
-                .ok_or(Error::BadJWT)?
-                .get("caches")
-                .ok_or(Error::BadJWT)?
-                .as_object()
-                .ok_or(Error::BadJWT)?;
-
-            let mut keys: Vec<_> = known_caches.keys().collect();
-            keys.sort();
-            let cache_name = keys.first().ok_or(Error::NoKnownCaches)?.to_string();
-
-            tracing::info!("Falling back to existing cache {}.", cache_name);
-
-            cache_name
+        if !response.status().is_success() {
+            return Err(Error::GetCacheName(
+                response.status(),
+                response.text().await?,
+            ));
         }
+
+        #[derive(Deserialize)]
+        struct ProjectInfo {
+            organization_uuid_v7: Uuid,
+            project_uuid_v7: Uuid,
+        }
+
+        let project_info = response.json::<ProjectInfo>().await?;
+
+        format!(
+            "{}:{}",
+            project_info.organization_uuid_v7, project_info.project_uuid_v7,
+        )
     };
+
+    tracing::info!("Using cache {:?}.", cache_name);
 
     let cache = CacheSliceIdentifier::from_str(&cache_name)?;
 
