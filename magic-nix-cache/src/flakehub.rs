@@ -53,7 +53,7 @@ pub async fn init_cache(
 
     let flakehub_cache_server_hostname = flakehub_cache_server
         .host()
-        .ok_or_else(|| Error::BadURL(flakehub_cache_server.to_owned()))?
+        .ok_or_else(|| Error::BadUrl(flakehub_cache_server.to_owned()))?
         .to_string();
 
     // Append an entry for the FlakeHub cache server to netrc.

@@ -47,7 +47,7 @@ pub enum Error {
     Attic(#[from] attic::AtticError),
 
     #[error("Bad URL")]
-    BadURL(reqwest::Url),
+    BadUrl(reqwest::Url),
 }
 
 impl IntoResponse for Error {
