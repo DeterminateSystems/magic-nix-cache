@@ -235,7 +235,7 @@ async fn main_cli() {
             .expect("Creating a temporary file");
         file.write_all(
             format!(
-                "#! /bin/sh\n{} --server {}\n",
+                "#! /bin/sh\nexec {} --server {}\n",
                 std::env::current_exe()
                     .expect("Getting the path of magic-nix-cache")
                     .display(),
