@@ -8,6 +8,7 @@ use attic_client::{
     config::ServerConfig,
     push::{PushConfig, Pusher},
 };
+use reqwest::Url;
 use serde::Deserialize;
 use std::env;
 use std::path::Path;
@@ -15,20 +16,21 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use uuid::Uuid;
 
 const JWT_PREFIX: &str = "flakehub1_";
 const USER_AGENT: &str = "magic-nix-cache";
 
 pub struct State {
-    pub substituter: String,
+    pub substituter: Url,
 
     pub push_session: PushSession,
 }
 
 pub async fn init_cache(
-    flakehub_api_server: &str,
+    flakehub_api_server: &Url,
     flakehub_api_server_netrc: &Path,
-    flakehub_cache_server: &str,
+    flakehub_cache_server: &Url,
     store: Arc<NixStore>,
 ) -> Result<State> {
     // Parse netrc to get the credentials for api.flakehub.com.
@@ -36,7 +38,7 @@ pub async fn init_cache(
         let mut netrc_file = File::open(flakehub_api_server_netrc).await?;
         let mut netrc_contents = String::new();
         netrc_file.read_to_string(&mut netrc_contents).await?;
-        netrc_rs::Netrc::parse(netrc_contents, false).unwrap()
+        netrc_rs::Netrc::parse(netrc_contents, false).map_err(Error::Netrc)?
     };
 
     let netrc_entry = {
@@ -44,35 +46,28 @@ pub async fn init_cache(
             .machines
             .iter()
             .find(|machine| {
-                machine.name.as_ref().unwrap()
-                    == &reqwest::Url::parse(flakehub_api_server)
-                        .unwrap()
-                        .host()
-                        .unwrap()
-                        .to_string()
+                machine.name.as_ref() == flakehub_api_server.host().map(|x| x.to_string()).as_ref()
             })
-            .unwrap()
+            .ok_or_else(|| Error::MissingCreds(flakehub_api_server.to_string()))?
             .to_owned()
     };
 
-    let flakehub_cache_server_hostname = reqwest::Url::parse(flakehub_cache_server)
-        .unwrap()
+    let flakehub_cache_server_hostname = flakehub_cache_server
         .host()
-        .unwrap()
+        .ok_or_else(|| Error::BadURL(flakehub_cache_server.to_owned()))?
         .to_string();
 
     // Append an entry for the FlakeHub cache server to netrc.
     if !netrc
         .machines
         .iter()
-        .any(|machine| machine.name.as_ref().unwrap() == &flakehub_cache_server_hostname)
+        .any(|machine| machine.name.as_ref() == Some(&flakehub_cache_server_hostname))
     {
         let mut netrc_file = tokio::fs::OpenOptions::new()
             .create(false)
             .append(true)
             .open(flakehub_api_server_netrc)
-            .await
-            .unwrap();
+            .await?;
         netrc_file
             .write_all(
                 format!(
@@ -82,8 +77,7 @@ pub async fn init_cache(
                 )
                 .as_bytes(),
             )
-            .await
-            .unwrap();
+            .await?;
     }
 
     // Get the cache we're supposed to use.
@@ -91,27 +85,28 @@ pub async fn init_cache(
         let github_repo = env::var("GITHUB_REPOSITORY")
             .expect("GITHUB_REPOSITORY environment variable is not set");
 
-        let url = format!("{}/project/{}", flakehub_api_server, github_repo,);
+        let url = flakehub_api_server
+            .join(&format!("project/{}", github_repo))
+            .unwrap();
 
         let response = reqwest::Client::new()
-            .get(&url)
+            .get(url.to_owned())
             .header("User-Agent", USER_AGENT)
             .basic_auth(
                 netrc_entry.login.as_ref().unwrap(),
                 netrc_entry.password.as_ref(),
             )
             .send()
-            .await
-            .unwrap();
+            .await?;
 
         if response.status().is_success() {
             #[derive(Deserialize)]
             struct ProjectInfo {
-                organization_uuid_v7: String,
-                project_uuid_v7: String,
+                organization_uuid_v7: Uuid,
+                project_uuid_v7: Uuid,
             }
 
-            let project_info = response.json::<ProjectInfo>().await.unwrap();
+            let project_info = response.json::<ProjectInfo>().await?;
 
             let expected_cache_name = format!(
                 "{}:{}",
@@ -133,24 +128,24 @@ pub async fn init_cache(
 
     // Get a token for creating and pushing to the FlakeHub binary cache.
     let (known_caches, token) = {
-        let url = format!("{}/token/create/cache", flakehub_api_server);
+        let url = flakehub_api_server.join("cache/token").unwrap();
 
         let request = reqwest::Client::new()
-            .post(&url)
+            .post(url.to_owned())
             .header("User-Agent", USER_AGENT)
             .basic_auth(
                 netrc_entry.login.as_ref().unwrap(),
                 netrc_entry.password.as_ref(),
             );
 
-        let response = request.send().await.unwrap();
+        let response = request.send().await?;
 
         if !response.status().is_success() {
-            panic!(
-                "Failed to get FlakeHub binary cache creation token from {}: {}",
+            return Err(Error::CacheCreation(
                 url,
-                response.status()
-            );
+                response.status(),
+                response.text().await?,
+            ));
         }
 
         #[derive(Deserialize)]
@@ -158,20 +153,20 @@ pub async fn init_cache(
             token: String,
         }
 
-        let token = response.json::<Response>().await.unwrap().token;
+        let token = response.json::<Response>().await?.token;
 
         // Parse the JWT to get the list of caches to which we have access.
-        let jwt = token.strip_prefix(JWT_PREFIX).unwrap();
+        let jwt = token.strip_prefix(JWT_PREFIX).ok_or(Error::BadJWT)?;
         let jwt_parsed: jwt::Token<jwt::Header, serde_json::Map<String, serde_json::Value>, _> =
-            jwt::Token::parse_unverified(jwt).unwrap();
+            jwt::Token::parse_unverified(jwt)?;
         let known_caches = jwt_parsed
             .claims()
             .get("https://cache.flakehub.com/v1")
-            .unwrap()
+            .ok_or(Error::BadJWT)?
             .get("caches")
-            .unwrap()
+            .ok_or(Error::BadJWT)?
             .as_object()
-            .unwrap();
+            .ok_or(Error::BadJWT)?;
 
         (known_caches.to_owned(), token)
     };
@@ -193,16 +188,16 @@ pub async fn init_cache(
         }
     };
 
-    let cache = CacheSliceIdentifier::from_str(&cache_name).unwrap();
+    let cache = CacheSliceIdentifier::from_str(&cache_name)?;
 
     tracing::info!("Using cache {}.", cache);
 
     // Create the cache.
     let api = ApiClient::from_server_config(ServerConfig {
-        endpoint: flakehub_cache_server.to_owned(),
+        endpoint: flakehub_cache_server.to_string(),
+        //token: netrc_entry.password.as_ref().cloned(),
         token: Some(token.to_owned()),
-    })
-    .unwrap();
+    })?;
 
     let request = CreateCacheRequest {
         keypair: KeypairConfig::Generate,
@@ -218,14 +213,14 @@ pub async fn init_cache(
                 tracing::info!("Cache {} already exists.", cache_name);
             }
             _ => {
-                panic!("{:?}", err);
+                return Err(Error::FlakeHub(err));
             }
         }
     } else {
         tracing::info!("Created cache {} on {}.", cache_name, flakehub_cache_server);
     }
 
-    let cache_config = api.get_cache_config(&cache).await.unwrap();
+    let cache_config = api.get_cache_config(&cache).await?;
 
     let push_config = PushConfig {
         num_workers: 5, // FIXME: use number of CPUs?
@@ -254,10 +249,7 @@ pub async fn init_cache(
 }
 
 pub async fn enqueue_paths(state: &State, store_paths: Vec<StorePath>) -> Result<()> {
-    state
-        .push_session
-        .queue_many(store_paths)
-        .map_err(Error::FlakeHub)?;
+    state.push_session.queue_many(store_paths)?;
 
     Ok(())
 }

@@ -29,7 +29,31 @@ pub enum Error {
     GHADisabled,
 
     #[error("FlakeHub cache error: {0}")]
-    FlakeHub(anyhow::Error),
+    FlakeHub(#[from] anyhow::Error),
+
+    #[error("FlakeHub HTTP error: {0}")]
+    FlakeHubHttp(#[from] reqwest::Error),
+
+    #[error("Got HTTP response {1} getting FlakeHub binary cache creation token from {0}: {2}")]
+    CacheCreation(reqwest::Url, reqwest::StatusCode, String),
+
+    #[error("netrc parse error: {0}")]
+    Netrc(netrc_rs::Error),
+
+    #[error("Cannot find netrc credentials for {0}")]
+    MissingCreds(String),
+
+    #[error("Received bad JWT")]
+    BadJWT,
+
+    #[error("Received bad JWT token: {0}")]
+    JWTParsing(#[from] jwt::Error),
+
+    #[error("Attic error: {0}")]
+    Attic(#[from] attic::AtticError),
+
+    #[error("Bad URL")]
+    BadURL(reqwest::Url),
 }
 
 impl IntoResponse for Error {

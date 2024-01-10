@@ -81,7 +81,7 @@ struct Args {
 
     /// The FlakeHub API server.
     #[arg(long)]
-    flakehub_api_server: Option<String>,
+    flakehub_api_server: Option<reqwest::Url>,
 
     /// The path of the `netrc` file that contains the FlakeHub JWT token.
     #[arg(long)]
@@ -89,7 +89,7 @@ struct Args {
 
     /// The FlakeHub binary cache server.
     #[arg(long)]
-    flakehub_cache_server: Option<String>,
+    flakehub_cache_server: Option<reqwest::Url>,
 
     /// The location of `nix.conf`.
     #[arg(long)]
@@ -186,16 +186,16 @@ async fn main_cli() {
                     )
                     .expect("Writing to nix.conf");
 
-                tracing::info!("Attic cache is enabled.");
+                tracing::info!("FlakeHub cache is enabled.");
                 Some(state)
             }
             Err(err) => {
-                tracing::error!("Attic cache initialization failed: {}", err);
+                tracing::error!("FlakeHub cache initialization failed: {}", err);
                 None
             }
         }
     } else {
-        tracing::info!("Attic cache is disabled.");
+        tracing::info!("FlakeHub cache is disabled.");
         None
     };
 
