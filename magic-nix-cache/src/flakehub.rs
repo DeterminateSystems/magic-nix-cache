@@ -80,8 +80,8 @@ pub async fn init_cache(
             .await?;
     }
 
-    // Get the cache we're supposed to use.
-    let expected_cache_name = {
+    // Get the cache UUID for this project.
+    let cache_name = {
         let github_repo = env::var("GITHUB_REPOSITORY")
             .expect("GITHUB_REPOSITORY environment variable is not set");
 
@@ -108,95 +108,84 @@ pub async fn init_cache(
 
             let project_info = response.json::<ProjectInfo>().await?;
 
-            let expected_cache_name = format!(
+            let cache_name = format!(
                 "{}:{}",
                 project_info.organization_uuid_v7, project_info.project_uuid_v7,
             );
 
-            tracing::info!("Want to use cache {:?}.", expected_cache_name);
+            tracing::info!("Using cache {:?}.", cache_name);
 
-            Some(expected_cache_name)
+            cache_name
         } else {
             tracing::error!(
                 "Failed to get project info from {}: {}",
                 url,
                 response.status()
             );
-            None
-        }
-    };
 
-    // Get a token for creating and pushing to the FlakeHub binary cache.
-    let (known_caches, token) = {
-        let url = flakehub_api_server.join("cache/token").unwrap();
+            // As a fallback (if the project doesn't exist yet on
+            // FlakeHub), get the list of known caches for this user
+            // and use the oldest one. FIXME: this might not be a good
+            // idea.
 
-        let request = reqwest::Client::new()
-            .post(url.to_owned())
-            .header("User-Agent", USER_AGENT)
-            .basic_auth(
-                netrc_entry.login.as_ref().unwrap(),
-                netrc_entry.password.as_ref(),
-            );
+            // FIXME: we don't actually need this token. We just need
+            // to query the caches the user has access to.
+            let url = flakehub_api_server.join("cache/token").unwrap();
 
-        let response = request.send().await?;
+            let request = reqwest::Client::new()
+                .post(url.to_owned())
+                .header("User-Agent", USER_AGENT)
+                .basic_auth(
+                    netrc_entry.login.as_ref().unwrap(),
+                    netrc_entry.password.as_ref(),
+                );
 
-        if !response.status().is_success() {
-            return Err(Error::CacheCreation(
-                url,
-                response.status(),
-                response.text().await?,
-            ));
-        }
+            let response = request.send().await?;
 
-        #[derive(Deserialize)]
-        struct Response {
-            token: String,
-        }
+            if !response.status().is_success() {
+                return Err(Error::CacheCreation(
+                    url,
+                    response.status(),
+                    response.text().await?,
+                ));
+            }
 
-        let token = response.json::<Response>().await?.token;
+            #[derive(Deserialize)]
+            struct Response {
+                token: String,
+            }
 
-        // Parse the JWT to get the list of caches to which we have access.
-        let jwt = token.strip_prefix(JWT_PREFIX).ok_or(Error::BadJWT)?;
-        let jwt_parsed: jwt::Token<jwt::Header, serde_json::Map<String, serde_json::Value>, _> =
-            jwt::Token::parse_unverified(jwt)?;
-        let known_caches = jwt_parsed
-            .claims()
-            .get("https://cache.flakehub.com/v1")
-            .ok_or(Error::BadJWT)?
-            .get("caches")
-            .ok_or(Error::BadJWT)?
-            .as_object()
-            .ok_or(Error::BadJWT)?;
+            let token = response.json::<Response>().await?.token;
 
-        (known_caches.to_owned(), token)
-    };
+            // Parse the JWT to get the list of caches to which we have access.
+            let jwt = token.strip_prefix(JWT_PREFIX).ok_or(Error::BadJWT)?;
+            let jwt_parsed: jwt::Token<jwt::Header, serde_json::Map<String, serde_json::Value>, _> =
+                jwt::Token::parse_unverified(jwt)?;
+            let known_caches = jwt_parsed
+                .claims()
+                .get("https://cache.flakehub.com/v1")
+                .ok_or(Error::BadJWT)?
+                .get("caches")
+                .ok_or(Error::BadJWT)?
+                .as_object()
+                .ok_or(Error::BadJWT)?;
 
-    // Use the expected cache if we have access to it, otherwise use
-    // the oldest cache to which we have access.
-    let cache_name = {
-        if expected_cache_name
-            .as_ref()
-            .map_or(false, |x| known_caches.get(x).is_some())
-        {
-            expected_cache_name.unwrap().to_owned()
-        } else {
             let mut keys: Vec<_> = known_caches.keys().collect();
             keys.sort();
-            keys.first()
-                .expect("FlakeHub did not return any cache for the calling user.")
-                .to_string()
+            let cache_name = keys.first().ok_or(Error::NoKnownCaches)?.to_string();
+
+            tracing::info!("Falling back to existing cache {}.", cache_name);
+
+            cache_name
         }
     };
 
     let cache = CacheSliceIdentifier::from_str(&cache_name)?;
 
-    tracing::info!("Using cache {}.", cache);
-
     // Create the cache.
     let api = ApiClient::from_server_config(ServerConfig {
         endpoint: flakehub_cache_server.to_string(),
-        //token: netrc_entry.password.as_ref().cloned(),
-        token: Some(token.to_owned()),
+        token: netrc_entry.password.as_ref().cloned(),
     })?;
 
     let request = CreateCacheRequest {

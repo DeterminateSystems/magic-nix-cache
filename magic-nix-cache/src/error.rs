@@ -54,6 +54,9 @@ pub enum Error {
 
     #[error("Bad URL")]
     BadURL(reqwest::Url),
+
+    #[error("FlakeHub did not return any cache for the calling user")]
+    NoKnownCaches,
 }
 
 impl IntoResponse for Error {
