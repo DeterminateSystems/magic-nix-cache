@@ -24,12 +24,14 @@ use std::fs::{self, create_dir_all, OpenOptions};
 use std::io::Write;
 use std::net::SocketAddr;
 use std::os::fd::FromRawFd;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ::attic::nix_store::NixStore;
 use axum::{extract::Extension, routing::get, Router};
 use clap::Parser;
+use tempfile::NamedTempFile;
 use tokio::sync::{oneshot, Mutex, RwLock};
 use tracing_subscriber::filter::EnvFilter;
 
@@ -226,13 +228,33 @@ async fn main_cli() {
         None
     };
 
+    /* Write the post-build hook script. Note that the shell script
+     * ignores errors, to avoid the Nix build from failing. */
+    let post_build_hook_script = {
+        let mut file = NamedTempFile::with_prefix("magic-nix-cache-build-hook-")
+            .expect("Creating a temporary file");
+        file.write_all(
+            format!(
+                "#! /bin/sh\n{} --server {}\n",
+                std::env::current_exe()
+                    .expect("Getting the path of magic-nix-cache")
+                    .display(),
+                args.listen
+            )
+            .as_bytes(),
+        )
+        .expect("Writing the post-build hook");
+        file.keep().unwrap().1
+    };
+
+    fs::set_permissions(&post_build_hook_script, fs::Permissions::from_mode(0o755)).unwrap();
+
+    /* Update nix.conf. */
     nix_conf
         .write_all(
             format!(
                 "fallback = true\npost-build-hook = {}\n",
-                std::env::current_exe()
-                    .expect("Getting the path of magic-nix-cache")
-                    .display()
+                post_build_hook_script.display()
             )
             .as_bytes(),
         )
@@ -278,7 +300,7 @@ async fn main_cli() {
 
     if let Some(notify_fd) = args.notify_fd {
         let mut f = unsafe { std::fs::File::from_raw_fd(notify_fd) };
-        write!(&mut f, "INIT\n").unwrap();
+        writeln!(&mut f, "INIT").unwrap();
     }
 
     let ret = axum::Server::bind(&args.listen)
@@ -297,15 +319,21 @@ async fn main_cli() {
 }
 
 async fn post_build_hook(out_paths: &str) {
+    #[derive(Parser, Debug)]
+    struct Args {
+        /// `magic-nix-cache` daemon to connect to.
+        #[arg(short = 'l', long, default_value = "127.0.0.1:3000")]
+        server: SocketAddr,
+    }
+
+    let args = Args::parse();
+
     let store_paths: Vec<_> = out_paths.lines().map(str::to_owned).collect();
 
     let request = api::EnqueuePathsRequest { store_paths };
 
     let response = reqwest::Client::new()
-        .post(format!(
-            "http://{}/api/enqueue-paths",
-            std::env::var("INPUT_LISTEN").unwrap_or_else(|_| "127.0.0.1:37515".to_owned())
-        ))
+        .post(format!("http://{}/api/enqueue-paths", &args.server))
         .header("Content-Type", "application/json")
         .body(serde_json::to_string(&request).unwrap())
         .send()

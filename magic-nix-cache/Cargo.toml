@@ -30,6 +30,7 @@ attic-client = { git = "ssh://git@github.com/DeterminateSystems/attic-priv", bra
 #attic-client = { path = "../../attic-priv/client" }
 indicatif = "0.17"
 anyhow = "1.0.71"
+tempfile = "3.9"
 
 [dependencies.tokio]
 version = "1.28.0"
