@@ -337,16 +337,36 @@ async fn post_build_hook(out_paths: &str) {
         .header("Content-Type", "application/json")
         .body(serde_json::to_string(&request).unwrap())
         .send()
-        .await
-        .unwrap();
+        .await;
 
-    if !response.status().is_success() {
-        eprintln!(
-            "magic-nix-cache server failed to enqueue the push request: {}",
-            response.status()
-        );
-    } else {
-        response.json::<api::EnqueuePathsResponse>().await.unwrap();
+    let mut err_message = None;
+    match response {
+        Ok(response) if !response.status().is_success() => {
+            err_message = Some(format!(
+                "magic-nix-cache server failed to enqueue the push request: {}",
+                response.status()
+            ));
+        }
+        Ok(response) => {
+            let enqueue_paths_response = response.json::<api::EnqueuePathsResponse>().await;
+            if let Err(err) = enqueue_paths_response {
+                err_message = Some(format!(
+                    "magic-nix-cache-server didn't return a valid response: {}",
+                    err
+                ))
+            }
+        }
+        Err(err) => {
+            err_message = Some(format!(
+                "magic-nix-cache server failed to send the enqueue request: {}",
+                err
+            ));
+        }
+    }
+
+    if let Some(err_message) = err_message {
+        eprintln!("{err_message}");
+        std::process::exit(1);
     }
 }
 
