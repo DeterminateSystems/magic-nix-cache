@@ -134,7 +134,7 @@ pub async fn init_cache(
         is_public: false,
         priority: 39,
         store_dir: "/nix/store".to_owned(),
-        upstream_cache_key_names: vec!["cache.nixos.org-1".to_owned()], // FIXME: do we want this?
+        upstream_cache_key_names: vec![],
     };
 
     if let Err(err) = api.create_cache(&cache, request).await {
