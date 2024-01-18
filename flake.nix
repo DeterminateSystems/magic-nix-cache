@@ -47,7 +47,22 @@
       });
 
       devShells = forEachSupportedSystem ({ pkgs, cranePkgs, lib }: {
-        default = pkgs.mkShell ({
+        default = pkgs.mkShell {
+          inputsFrom = [ cranePkgs.magic-nix-cache ];
+          packages = with pkgs; [
+            bashInteractive
+            cranePkgs.rustNightly
+
+            cargo-bloat
+            cargo-edit
+            cargo-udeps
+            cargo-watch
+
+            age
+          ];
+        };
+
+        cross = pkgs.mkShell ({
           inputsFrom = [ cranePkgs.magic-nix-cache ];
           packages = with pkgs; [
             bashInteractive

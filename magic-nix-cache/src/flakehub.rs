@@ -1,10 +1,9 @@
 use crate::error::{Error, Result};
-use attic::api::v1::cache_config::{CreateCacheRequest, KeypairConfig};
 use attic::cache::CacheSliceIdentifier;
 use attic::nix_store::{NixStore, StorePath};
 use attic_client::push::{PushSession, PushSessionConfig};
 use attic_client::{
-    api::{ApiClient, ApiError},
+    api::ApiClient,
     config::ServerConfig,
     push::{PushConfig, Pusher},
 };
@@ -119,36 +118,14 @@ pub async fn init_cache(
         )
     };
 
-    tracing::info!("Using cache {:?}.", cache_name);
+    tracing::info!("Using cache {:?}", cache_name);
 
     let cache = CacheSliceIdentifier::from_str(&cache_name)?;
 
-    // Create the cache.
     let api = ApiClient::from_server_config(ServerConfig {
         endpoint: flakehub_cache_server.to_string(),
         token: netrc_entry.password.as_ref().cloned(),
     })?;
-
-    let request = CreateCacheRequest {
-        keypair: KeypairConfig::Generate,
-        is_public: false,
-        priority: 39,
-        store_dir: "/nix/store".to_owned(),
-        upstream_cache_key_names: vec!["cache.nixos.org-1".to_owned()], // FIXME: do we want this?
-    };
-
-    if let Err(err) = api.create_cache(&cache, request).await {
-        match err.downcast_ref::<ApiError>() {
-            Some(ApiError::Structured(x)) if x.error == "CacheAlreadyExists" => {
-                tracing::info!("Cache {} already exists.", cache_name);
-            }
-            _ => {
-                return Err(Error::FlakeHub(err));
-            }
-        }
-    } else {
-        tracing::info!("Created cache {} on {}.", cache_name, flakehub_cache_server);
-    }
 
     let cache_config = api.get_cache_config(&cache).await?;
 
