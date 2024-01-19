@@ -235,7 +235,9 @@ async fn main_cli() {
             .expect("Creating a temporary file");
         file.write_all(
             format!(
-                "#! /bin/sh\nexec {} --server {}\n",
+                // NOTE(cole-h): We want to exit 0 even if the hook failed, otherwise it'll fail the
+                // build itself
+                "#! /bin/sh\nRUST_BACKTRACE=full {} --server {}\nexit 0\n",
                 std::env::current_exe()
                     .expect("Getting the path of magic-nix-cache")
                     .display(),
@@ -337,16 +339,35 @@ async fn post_build_hook(out_paths: &str) {
         .header("Content-Type", "application/json")
         .body(serde_json::to_string(&request).unwrap())
         .send()
-        .await
-        .unwrap();
+        .await;
 
-    if !response.status().is_success() {
-        eprintln!(
-            "magic-nix-cache server failed to enqueue the push request: {}",
-            response.status()
-        );
-    } else {
-        response.json::<api::EnqueuePathsResponse>().await.unwrap();
+    let mut err_message = None;
+    match response {
+        Ok(response) if !response.status().is_success() => {
+            err_message = Some(format!(
+                "magic-nix-cache server failed to enqueue the push request: {}",
+                response.status()
+            ));
+        }
+        Ok(response) => {
+            let enqueue_paths_response = response.json::<api::EnqueuePathsResponse>().await;
+            if let Err(err) = enqueue_paths_response {
+                err_message = Some(format!(
+                    "magic-nix-cache-server didn't return a valid response: {}",
+                    err
+                ))
+            }
+        }
+        Err(err) => {
+            err_message = Some(format!(
+                "magic-nix-cache server failed to send the enqueue request: {}",
+                err
+            ));
+        }
+    }
+
+    if let Some(err_message) = err_message {
+        eprintln!("{err_message}");
     }
 }
 
