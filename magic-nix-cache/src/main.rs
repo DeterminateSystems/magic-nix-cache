@@ -235,7 +235,9 @@ async fn main_cli() {
             .expect("Creating a temporary file");
         file.write_all(
             format!(
-                "#! /bin/sh\nexec env RUST_BACKTRACE=full {} --server {}\n",
+                // NOTE(cole-h): We want to exit 0 even if the hook failed, otherwise it'll fail the
+                // build itself
+                "#! /bin/sh\nRUST_BACKTRACE=full {} --server {}\nexit 0\n",
                 std::env::current_exe()
                     .expect("Getting the path of magic-nix-cache")
                     .display(),
@@ -366,7 +368,6 @@ async fn post_build_hook(out_paths: &str) {
 
     if let Some(err_message) = err_message {
         eprintln!("{err_message}");
-        std::process::exit(1);
     }
 }
 
