@@ -190,7 +190,7 @@ async fn main_cli() {
                 Some(state)
             }
             Err(err) => {
-                tracing::error!("FlakeHub cache initialization failed: {}", err);
+                tracing::debug!("Flakehub cache initialization failed: {}", err);
                 None
             }
         }
@@ -221,10 +221,10 @@ async fn main_cli() {
             .write_all(format!("extra-substituters = http://{}?trusted=1&compression=zstd&parallel-compression=true&priority=1\n", args.listen).as_bytes())
             .expect("Writing to nix.conf");
 
-        tracing::info!("GitHub Action cache is enabled.");
+        tracing::info!("Native GitHub Action cache is enabled.");
         Some(api)
     } else {
-        tracing::info!("GitHub Action cache is disabled.");
+        tracing::info!("Native GitHub Action cache is disabled.");
         None
     };
 
