@@ -345,8 +345,9 @@ async fn post_build_hook(out_paths: &str) {
     match response {
         Ok(response) if !response.status().is_success() => {
             err_message = Some(format!(
-                "magic-nix-cache server failed to enqueue the push request: {}",
-                response.status()
+                "magic-nix-cache server failed to enqueue the push request: {}\n{}",
+                response.status(),
+                response.text().await.unwrap_or_else(|_| "".to_owned()),
             ));
         }
         Ok(response) => {
