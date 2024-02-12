@@ -9,7 +9,7 @@ use axum_macros::debug_handler;
 use serde::{Deserialize, Serialize};
 
 use super::State;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::util::{get_store_paths, upload_paths};
 
 #[derive(Debug, Clone, Serialize)]
@@ -112,11 +112,11 @@ async fn enqueue_paths(
 ) -> Result<Json<EnqueuePathsResponse>> {
     tracing::info!("Enqueueing {:?}", req.store_paths);
 
-    let store_paths: Vec<_> = req
+    let store_paths = req
         .store_paths
         .iter()
-        .map(|path| state.store.follow_store_path(path).unwrap())
-        .collect();
+        .map(|path| state.store.follow_store_path(path).map_err(Error::Attic))
+        .collect::<Result<Vec<_>>>()?;
 
     if let Some(flakehub_state) = &*state.flakehub_state.read().await {
         crate::flakehub::enqueue_paths(flakehub_state, store_paths).await?;
