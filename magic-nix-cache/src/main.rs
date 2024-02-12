@@ -330,7 +330,10 @@ async fn post_build_hook(out_paths: &str) {
 
     let args = Args::parse();
 
-    let store_paths: Vec<_> = out_paths.lines().map(str::to_owned).collect();
+    let store_paths: Vec<_> = out_paths
+        .split_whitespace()
+        .map(|s| s.trim().to_owned())
+        .collect();
 
     let request = api::EnqueuePathsRequest { store_paths };
 
