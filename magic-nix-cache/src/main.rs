@@ -23,7 +23,6 @@ use std::collections::HashSet;
 use std::fs::{self, create_dir_all, OpenOptions};
 use std::io::Write;
 use std::net::SocketAddr;
-use std::os::fd::FromRawFd;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -103,9 +102,9 @@ struct Args {
     #[arg(long)]
     use_flakehub: bool,
 
-    /// File descriptor on which to send startup notification.
+    /// URL to which to post startup notification.
     #[arg(long)]
-    notify_fd: Option<i32>,
+    startup_notification_url: Option<reqwest::Url>,
 }
 
 /// The global server state.
@@ -300,9 +299,27 @@ async fn main_cli() {
 
     tracing::info!("Listening on {}", args.listen);
 
-    if let Some(notify_fd) = args.notify_fd {
-        let mut f = unsafe { std::fs::File::from_raw_fd(notify_fd) };
-        writeln!(&mut f, "INIT").unwrap();
+    if let Some(startup_notification_url) = args.startup_notification_url {
+        let response = reqwest::Client::new()
+            .post(startup_notification_url)
+            .header("Content-Type", "application/json")
+            .body("{}")
+            .send()
+            .await;
+        match response {
+            Ok(response) => {
+                if !response.status().is_success() {
+                    panic!(
+                        "Startup notification returned an error: {}\n{}",
+                        response.status(),
+                        response.text().await.unwrap_or_else(|_| "".to_owned())
+                    );
+                }
+            }
+            Err(err) => {
+                panic!("Startup notification failed: {}", err);
+            }
+        }
     }
 
     let ret = axum::Server::bind(&args.listen)
