@@ -302,7 +302,7 @@ async fn main_cli() {
     if let Some(startup_notification_url) = args.startup_notification_url {
         let response = reqwest::Client::new()
             .post(startup_notification_url)
-            .header("Content-Type", "application/json")
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
             .body("{}")
             .send()
             .await;
@@ -356,7 +356,7 @@ async fn post_build_hook(out_paths: &str) {
 
     let response = reqwest::Client::new()
         .post(format!("http://{}/api/enqueue-paths", &args.server))
-        .header("Content-Type", "application/json")
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
         .body(serde_json::to_string(&request).unwrap())
         .send()
         .await;
