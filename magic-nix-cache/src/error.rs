@@ -48,6 +48,9 @@ pub enum Error {
 
     #[error("Bad URL")]
     BadUrl(reqwest::Url),
+
+    #[error("Configuration error: {0}")]
+    Config(String),
 }
 
 impl IntoResponse for Error {

@@ -53,16 +53,20 @@ pub async fn upload_paths(mut paths: Vec<PathBuf>, store_uri: &str) -> Result<()
         .output()
         .await?
         .stdout;
-    let env_path = String::from_utf8(env_path).expect("PATH contains invalid UTF-8");
+    let env_path = String::from_utf8(env_path)
+        .map_err(|_| Error::Config("PATH contains invalid UTF-8".to_owned()))?;
 
     while !paths.is_empty() {
         let mut batch = Vec::new();
         let mut total_len = 0;
 
-        while !paths.is_empty() && total_len < 1024 * 1024 {
-            let p = paths.pop().unwrap();
-            total_len += p.as_os_str().len() + 1;
-            batch.push(p);
+        while total_len < 1024 * 1024 {
+            if let Some(p) = paths.pop() {
+                total_len += p.as_os_str().len() + 1;
+                batch.push(p);
+            } else {
+                break;
+            }
         }
 
         tracing::debug!("{} paths in this batch", batch.len());

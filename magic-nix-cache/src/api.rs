@@ -63,12 +63,15 @@ async fn workflow_finish(
         upload_paths(new_paths.clone(), &store_uri).await?;
     }
 
-    let sender = state.shutdown_sender.lock().await.take().unwrap();
-    sender.send(()).unwrap();
+    if let Some(sender) = state.shutdown_sender.lock().await.take() {
+        sender
+            .send(())
+            .expect("Cannot send shutdown server message");
 
-    // Wait for the Attic push workers to finish.
-    if let Some(attic_state) = state.flakehub_state.write().await.take() {
-        attic_state.push_session.wait().await.unwrap();
+        // Wait for the Attic push workers to finish.
+        if let Some(attic_state) = state.flakehub_state.write().await.take() {
+            attic_state.push_session.wait().await?;
+        }
     }
 
     let reply = WorkflowFinishResponse {
@@ -93,7 +96,7 @@ fn make_store_uri(self_endpoint: &SocketAddr) -> String {
         .authority(self_endpoint.to_string())
         .path_and_query("/?compression=zstd&parallel-compression=true")
         .build()
-        .unwrap()
+        .expect("Cannot construct URL to self")
         .to_string()
 }
 
