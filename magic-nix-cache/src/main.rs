@@ -328,7 +328,7 @@ async fn main_cli() -> Result<()> {
                     Err(anyhow!(
                         "Startup notification returned an error: {}\n{}",
                         response.status(),
-                        response.text().await.unwrap_or_else(|_| "".to_owned())
+                        response.text().await.unwrap_or_else(|_| "<no response text>".to_owned())
                     ))?;
                 }
             }
@@ -386,7 +386,7 @@ async fn post_build_hook(out_paths: &str) -> Result<()> {
         Ok(response) if !response.status().is_success() => Err(anyhow!(
             "magic-nix-cache server failed to enqueue the push request: {}\n{}",
             response.status(),
-            response.text().await.unwrap_or_else(|_| "".to_owned()),
+            response.text().await.unwrap_or_else(|_| "<no response text>".to_owned()),
         ))?,
         Ok(response) => response
             .json::<api::EnqueuePathsResponse>()
