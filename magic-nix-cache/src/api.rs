@@ -49,7 +49,6 @@ async fn workflow_finish(
     Extension(state): Extension<State>,
 ) -> Result<Json<WorkflowFinishResponse>> {
     tracing::info!("Workflow finished");
-
     let original_paths = state.original_paths.lock().await;
     let final_paths = get_store_paths(&state.store).await?;
     let new_paths = final_paths
@@ -66,7 +65,7 @@ async fn workflow_finish(
     if let Some(sender) = state.shutdown_sender.lock().await.take() {
         sender
             .send(())
-            .expect("Cannot send shutdown server message");
+            .map_err(|_| Error::Internal("Sending shutdown server message".to_owned()))?;
 
         // Wait for the Attic push workers to finish.
         if let Some(attic_state) = state.flakehub_state.write().await.take() {

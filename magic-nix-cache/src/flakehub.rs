@@ -39,7 +39,7 @@ pub async fn init_cache(
         netrc_rs::Netrc::parse(netrc_contents, false).map_err(Error::Netrc)?
     };
 
-    let netrc_entry = {
+    let flakehub_netrc_entry = {
         netrc
             .machines
             .iter()
@@ -55,17 +55,17 @@ pub async fn init_cache(
         .ok_or_else(|| Error::BadUrl(flakehub_cache_server.to_owned()))?
         .to_string();
 
-    let login = netrc_entry.login.as_ref().ok_or_else(|| {
+    let flakehub_login = flakehub_netrc_entry.login.as_ref().ok_or_else(|| {
         Error::Config(format!(
             "netrc file does not contain a login for '{}'",
-            flakehub_cache_server
+            flakehub_api_server
         ))
     })?;
 
-    let password = netrc_entry.password.as_ref().ok_or_else(|| {
+    let flakehub_password = flakehub_netrc_entry.password.as_ref().ok_or_else(|| {
         Error::Config(format!(
             "netrc file does not contain a password for '{}'",
-            flakehub_cache_server
+            flakehub_api_server
         ))
     })?;
 
@@ -83,8 +83,8 @@ pub async fn init_cache(
         netrc_file
             .write_all(
                 format!(
-                    "\nmachine {} password {}\n\n",
-                    flakehub_cache_server_hostname, password,
+                    "\nmachine {} login {} password {}\n\n",
+                    flakehub_cache_server_hostname, flakehub_login, flakehub_password,
                 )
                 .as_bytes(),
             )
@@ -104,7 +104,7 @@ pub async fn init_cache(
         let response = reqwest::Client::new()
             .get(url.to_owned())
             .header("User-Agent", USER_AGENT)
-            .basic_auth(login, Some(password))
+            .basic_auth(flakehub_login, Some(flakehub_password))
             .send()
             .await?;
 
@@ -135,7 +135,7 @@ pub async fn init_cache(
 
     let api = ApiClient::from_server_config(ServerConfig {
         endpoint: flakehub_cache_server.to_string(),
-        token: netrc_entry.password.as_ref().cloned(),
+        token: flakehub_netrc_entry.password.as_ref().cloned(),
     })?;
 
     let cache_config = api.get_cache_config(&cache).await?;
