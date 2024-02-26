@@ -28,6 +28,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ::attic::nix_store::NixStore;
+use anyhow::{anyhow, Context, Result};
 use axum::{extract::Extension, routing::get, Router};
 use clap::Parser;
 use tempfile::NamedTempFile;
@@ -139,34 +140,35 @@ struct StateInner {
     flakehub_state: RwLock<Option<flakehub::State>>,
 }
 
-async fn main_cli() {
+async fn main_cli() -> Result<()> {
     init_logging();
 
     let args = Args::parse();
 
-    create_dir_all(Path::new(&args.nix_conf).parent().unwrap())
-        .expect("Creating parent directories of nix.conf");
+    if let Some(parent) = Path::new(&args.nix_conf).parent() {
+        create_dir_all(parent).with_context(|| "Creating parent directories of nix.conf")?;
+    }
 
     let mut nix_conf = OpenOptions::new()
         .create(true)
         .append(true)
         .open(args.nix_conf)
-        .expect("Opening nix.conf");
+        .with_context(|| "Creating nix.conf")?;
 
-    let store = Arc::new(NixStore::connect().expect("Connecting to the Nix store"));
+    let store = Arc::new(NixStore::connect()?);
 
     let flakehub_state = if args.use_flakehub {
         let flakehub_cache_server = args
             .flakehub_cache_server
-            .expect("--flakehub-cache-server is required");
+            .ok_or_else(|| anyhow!("--flakehub-cache-server is required"))?;
         let flakehub_api_server_netrc = args
             .flakehub_api_server_netrc
-            .expect("--flakehub-api-server-netrc is required");
+            .ok_or_else(|| anyhow!("--flakehub-api-server-netrc is required"))?;
 
         match flakehub::init_cache(
             &args
                 .flakehub_api_server
-                .expect("--flakehub-api-server is required"),
+                .ok_or_else(|| anyhow!("--flakehub-api-server is required"))?,
             &flakehub_api_server_netrc,
             &flakehub_cache_server,
             store.clone(),
@@ -183,7 +185,7 @@ async fn main_cli() {
                         )
                         .as_bytes(),
                     )
-                    .expect("Writing to nix.conf");
+                    .with_context(|| "Writing to nix.conf")?;
 
                 tracing::info!("FlakeHub cache is enabled.");
                 Some(state)
@@ -201,16 +203,27 @@ async fn main_cli() {
     let api = if args.use_gha_cache {
         let credentials = if let Some(credentials_file) = &args.credentials_file {
             tracing::info!("Loading credentials from {:?}", credentials_file);
-            let bytes = fs::read(credentials_file).expect("Failed to read credentials file");
+            let bytes = fs::read(credentials_file).with_context(|| {
+                format!(
+                    "Failed to read credentials file '{}'",
+                    credentials_file.display()
+                )
+            })?;
 
-            serde_json::from_slice(&bytes).expect("Failed to deserialize credentials file")
+            serde_json::from_slice(&bytes).with_context(|| {
+                format!(
+                    "Failed to deserialize credentials file '{}'",
+                    credentials_file.display()
+                )
+            })?
         } else {
             tracing::info!("Loading credentials from environment");
             Credentials::load_from_env()
-                .expect("Failed to load credentials from environment (see README.md)")
+                .with_context(|| "Failed to load credentials from environment (see README.md)")?
         };
 
-        let mut api = Api::new(credentials).expect("Failed to initialize GitHub Actions Cache API");
+        let mut api = Api::new(credentials)
+            .with_context(|| "Failed to initialize GitHub Actions Cache API")?;
 
         if let Some(cache_version) = &args.cache_version {
             api.mutate_version(cache_version.as_bytes());
@@ -218,7 +231,7 @@ async fn main_cli() {
 
         nix_conf
             .write_all(format!("extra-substituters = http://{}?trusted=1&compression=zstd&parallel-compression=true&priority=1\n", args.listen).as_bytes())
-            .expect("Writing to nix.conf");
+            .with_context(|| "Writing to nix.conf")?;
 
         tracing::info!("Native GitHub Action cache is enabled.");
         Some(api)
@@ -231,24 +244,27 @@ async fn main_cli() {
      * ignores errors, to avoid the Nix build from failing. */
     let post_build_hook_script = {
         let mut file = NamedTempFile::with_prefix("magic-nix-cache-build-hook-")
-            .expect("Creating a temporary file");
+            .with_context(|| "Creating a temporary file for the post-build hook")?;
         file.write_all(
             format!(
                 // NOTE(cole-h): We want to exit 0 even if the hook failed, otherwise it'll fail the
                 // build itself
                 "#! /bin/sh\nRUST_BACKTRACE=full {} --server {}\nexit 0\n",
                 std::env::current_exe()
-                    .expect("Getting the path of magic-nix-cache")
+                    .with_context(|| "Getting the path of magic-nix-cache")?
                     .display(),
                 args.listen
             )
             .as_bytes(),
         )
-        .expect("Writing the post-build hook");
-        file.keep().unwrap().1
+        .with_context(|| "Writing the post-build hook")?;
+        file.keep()
+            .with_context(|| "Keeping the post-build hook")?
+            .1
     };
 
-    fs::set_permissions(&post_build_hook_script, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(&post_build_hook_script, fs::Permissions::from_mode(0o755))
+        .with_context(|| "Setting permissions on the post-build hook")?;
 
     /* Update nix.conf. */
     nix_conf
@@ -259,7 +275,7 @@ async fn main_cli() {
             )
             .as_bytes(),
         )
-        .expect("Writing to nix.conf");
+        .with_context(|| "Writing to nix.conf")?;
 
     drop(nix_conf);
 
@@ -309,15 +325,18 @@ async fn main_cli() {
         match response {
             Ok(response) => {
                 if !response.status().is_success() {
-                    panic!(
+                    Err(anyhow!(
                         "Startup notification returned an error: {}\n{}",
                         response.status(),
-                        response.text().await.unwrap_or_else(|_| "".to_owned())
-                    );
+                        response
+                            .text()
+                            .await
+                            .unwrap_or_else(|_| "<no response text>".to_owned())
+                    ))?;
                 }
             }
-            Err(err) => {
-                panic!("Startup notification failed: {}", err);
+            err @ Err(_) => {
+                err.with_context(|| "Startup notification failed")?;
             }
         }
     }
@@ -334,10 +353,12 @@ async fn main_cli() {
         state.metrics.send(diagnostic_endpoint).await;
     }
 
-    ret.unwrap()
+    ret?;
+
+    Ok(())
 }
 
-async fn post_build_hook(out_paths: &str) {
+async fn post_build_hook(out_paths: &str) -> Result<()> {
     #[derive(Parser, Debug)]
     struct Args {
         /// `magic-nix-cache` daemon to connect to.
@@ -357,43 +378,36 @@ async fn post_build_hook(out_paths: &str) {
     let response = reqwest::Client::new()
         .post(format!("http://{}/api/enqueue-paths", &args.server))
         .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .body(serde_json::to_string(&request).unwrap())
+        .body(
+            serde_json::to_string(&request)
+                .with_context(|| "Decoding the response from the magic-nix-cache server")?,
+        )
         .send()
         .await;
 
-    let mut err_message = None;
     match response {
-        Ok(response) if !response.status().is_success() => {
-            err_message = Some(format!(
-                "magic-nix-cache server failed to enqueue the push request: {}\n{}",
-                response.status(),
-                response.text().await.unwrap_or_else(|_| "".to_owned()),
-            ));
-        }
-        Ok(response) => {
-            let enqueue_paths_response = response.json::<api::EnqueuePathsResponse>().await;
-            if let Err(err) = enqueue_paths_response {
-                err_message = Some(format!(
-                    "magic-nix-cache-server didn't return a valid response: {}",
-                    err
-                ))
-            }
-        }
+        Ok(response) if !response.status().is_success() => Err(anyhow!(
+            "magic-nix-cache server failed to enqueue the push request: {}\n{}",
+            response.status(),
+            response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<no response text>".to_owned()),
+        ))?,
+        Ok(response) => response
+            .json::<api::EnqueuePathsResponse>()
+            .await
+            .with_context(|| "magic-nix-cache-server didn't return a valid response")?,
         Err(err) => {
-            err_message = Some(format!(
-                "magic-nix-cache server failed to send the enqueue request: {}",
-                err
-            ));
+            Err(err).with_context(|| "magic-nix-cache server failed to send the enqueue request")?
         }
-    }
+    };
 
-    if let Some(err_message) = err_message {
-        eprintln!("{err_message}");
-    }
+    Ok(())
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     match std::env::var("OUT_PATHS") {
         Ok(out_paths) => post_build_hook(&out_paths).await,
         Err(_) => main_cli().await,

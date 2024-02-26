@@ -39,7 +39,7 @@ pub async fn init_cache(
         netrc_rs::Netrc::parse(netrc_contents, false).map_err(Error::Netrc)?
     };
 
-    let netrc_entry = {
+    let flakehub_netrc_entry = {
         netrc
             .machines
             .iter()
@@ -55,6 +55,20 @@ pub async fn init_cache(
         .ok_or_else(|| Error::BadUrl(flakehub_cache_server.to_owned()))?
         .to_string();
 
+    let flakehub_login = flakehub_netrc_entry.login.as_ref().ok_or_else(|| {
+        Error::Config(format!(
+            "netrc file does not contain a login for '{}'",
+            flakehub_api_server
+        ))
+    })?;
+
+    let flakehub_password = flakehub_netrc_entry.password.as_ref().ok_or_else(|| {
+        Error::Config(format!(
+            "netrc file does not contain a password for '{}'",
+            flakehub_api_server
+        ))
+    })?;
+
     // Append an entry for the FlakeHub cache server to netrc.
     if !netrc
         .machines
@@ -69,9 +83,8 @@ pub async fn init_cache(
         netrc_file
             .write_all(
                 format!(
-                    "\nmachine {} password {}\n\n",
-                    flakehub_cache_server_hostname,
-                    netrc_entry.password.as_ref().unwrap(),
+                    "\nmachine {} login {} password {}\n\n",
+                    flakehub_cache_server_hostname, flakehub_login, flakehub_password,
                 )
                 .as_bytes(),
             )
@@ -80,20 +93,18 @@ pub async fn init_cache(
 
     // Get the cache UUID for this project.
     let cache_name = {
-        let github_repo = env::var("GITHUB_REPOSITORY")
-            .expect("GITHUB_REPOSITORY environment variable is not set");
+        let github_repo = env::var("GITHUB_REPOSITORY").map_err(|_| {
+            Error::Config("GITHUB_REPOSITORY environment variable is not set".to_owned())
+        })?;
 
         let url = flakehub_api_server
             .join(&format!("project/{}", github_repo))
-            .unwrap();
+            .map_err(|_| Error::Config(format!("bad URL '{}'", flakehub_api_server)))?;
 
         let response = reqwest::Client::new()
             .get(url.to_owned())
             .header("User-Agent", USER_AGENT)
-            .basic_auth(
-                netrc_entry.login.as_ref().unwrap(),
-                netrc_entry.password.as_ref(),
-            )
+            .basic_auth(flakehub_login, Some(flakehub_password))
             .send()
             .await?;
 
@@ -124,7 +135,7 @@ pub async fn init_cache(
 
     let api = ApiClient::from_server_config(ServerConfig {
         endpoint: flakehub_cache_server.to_string(),
-        token: netrc_entry.password.as_ref().cloned(),
+        token: flakehub_netrc_entry.password.as_ref().cloned(),
     })?;
 
     let cache_config = api.get_cache_config(&cache).await?;

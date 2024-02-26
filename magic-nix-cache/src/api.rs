@@ -49,7 +49,6 @@ async fn workflow_finish(
     Extension(state): Extension<State>,
 ) -> Result<Json<WorkflowFinishResponse>> {
     tracing::info!("Workflow finished");
-
     let original_paths = state.original_paths.lock().await;
     let final_paths = get_store_paths(&state.store).await?;
     let new_paths = final_paths
@@ -63,12 +62,15 @@ async fn workflow_finish(
         upload_paths(new_paths.clone(), &store_uri).await?;
     }
 
-    let sender = state.shutdown_sender.lock().await.take().unwrap();
-    sender.send(()).unwrap();
+    if let Some(sender) = state.shutdown_sender.lock().await.take() {
+        sender
+            .send(())
+            .map_err(|_| Error::Internal("Sending shutdown server message".to_owned()))?;
 
-    // Wait for the Attic push workers to finish.
-    if let Some(attic_state) = state.flakehub_state.write().await.take() {
-        attic_state.push_session.wait().await.unwrap();
+        // Wait for the Attic push workers to finish.
+        if let Some(attic_state) = state.flakehub_state.write().await.take() {
+            attic_state.push_session.wait().await?;
+        }
     }
 
     let reply = WorkflowFinishResponse {
@@ -93,7 +95,7 @@ fn make_store_uri(self_endpoint: &SocketAddr) -> String {
         .authority(self_endpoint.to_string())
         .path_and_query("/?compression=zstd&parallel-compression=true")
         .build()
-        .unwrap()
+        .expect("Cannot construct URL to self")
         .to_string()
 }
 
