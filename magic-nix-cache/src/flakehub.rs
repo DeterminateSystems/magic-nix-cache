@@ -1,12 +1,15 @@
 use crate::error::{Error, Result};
-use attic::cache::CacheSliceIdentifier;
 use attic::nix_store::{NixStore, StorePath};
+use attic_client::api::ApiError;
+use attic_client::config::ServerTokenConfig;
 use attic_client::push::{PushSession, PushSessionConfig};
 use attic_client::{
     api::ApiClient,
     config::ServerConfig,
     push::{PushConfig, Pusher},
 };
+use axum::http::{HeaderMap, HeaderValue};
+use reqwest::header::AUTHORIZATION;
 use reqwest::Url;
 use serde::Deserialize;
 use std::env;
@@ -91,6 +94,21 @@ pub async fn init_cache(
             .await?;
     }
 
+    fn build_http_client(password: &str) -> reqwest::Client {
+        let mut headers = HeaderMap::new();
+
+        let auth_header = HeaderValue::from_str(&format!("Bearer {}", password)).unwrap();
+        headers.insert(AUTHORIZATION, auth_header);
+
+        reqwest::Client::builder()
+            .user_agent(USER_AGENT)
+            .default_headers(headers)
+            .build()
+            .expect("TODO")
+    }
+
+    let flakehub_client = build_http_client(flakehub_password);
+
     // Get the cache UUID for this project.
     let cache_name = {
         let github_repo = env::var("GITHUB_REPOSITORY").map_err(|_| {
@@ -131,14 +149,35 @@ pub async fn init_cache(
 
     tracing::info!("Using cache {:?}", cache_name);
 
-    let cache = CacheSliceIdentifier::from_str(&cache_name)?;
+    let cache = cache_name;
 
     let api = ApiClient::from_server_config(ServerConfig {
         endpoint: flakehub_cache_server.to_string(),
-        token: flakehub_netrc_entry.password.as_ref().cloned(),
+        token: flakehub_netrc_entry
+            .password
+            .map(|token| ServerTokenConfig::Raw { token })
+            .as_ref()
+            .cloned(),
     })?;
 
-    let cache_config = api.get_cache_config(&cache).await?;
+    let cache_config = {
+        let cache = &cache;
+        let endpoint = flakehub_cache_server
+            .join("_api/v1/cache-config/")
+            .expect("TODO")
+            .join(cache)
+            .expect("TODO");
+
+        let res = flakehub_client.get(endpoint).send().await?;
+
+        if res.status().is_success() {
+            let cache_config = res.json().await?;
+            Ok(cache_config)
+        } else {
+            let api_error = ApiError::try_from_response(res).await?;
+            Err(api_error.into())
+        }
+    };
 
     let push_config = PushConfig {
         num_workers: 5, // FIXME: use number of CPUs?
