@@ -23,10 +23,10 @@ is_ci = "1.1.1"
 sha2 = { version = "0.10.6", default-features = false }
 reqwest = { version = "0.11.17", default-features = false, features = ["blocking", "rustls-tls-native-roots", "trust-dns"] }
 netrc-rs = "0.1.2"
-attic = { git = "ssh://git@github.com/DeterminateSystems/attic-priv", branch = "main" }
-#attic = { path = "../../attic-priv/attic" }
-attic-client = { git = "ssh://git@github.com/DeterminateSystems/attic-priv", branch = "main" }
-#attic-client = { path = "../../attic-priv/client" }
+# attic = { git = "https://github.com/zhaofengli/attic", rev = "e9918bc6be268da6fa97af6ced15193d8a0421c0" }
+attic = { path = "/home/vin/workspace/vcs/attic/attic" }
+# attic-client = { git = "https://github.com/zhaofengli/attic", rev = "e9918bc6be268da6fa97af6ced15193d8a0421c0" }
+attic-client = { path = "/home/vin/workspace/vcs/attic/client" }
 indicatif = "0.17"
 anyhow = "1.0.71"
 tempfile = "3.9"
