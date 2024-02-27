@@ -134,6 +134,7 @@ checksum = "c59bdb34bc650a32731b31bd8f0829cc15d24a708ee31559e0bb34f2bc320cba"
 [[package]]
 name = "attic"
 version = "0.1.0"
+source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#4b9ee37d2735026dd8dec5b84aa69f5841589677"
 dependencies = [
  "async-stream",
  "base64",
@@ -163,6 +164,7 @@ dependencies = [
 [[package]]
 name = "attic-client"
 version = "0.1.0"
+source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#4b9ee37d2735026dd8dec5b84aa69f5841589677"
 dependencies = [
  "anyhow",
  "async-channel",
