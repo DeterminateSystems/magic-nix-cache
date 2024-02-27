@@ -91,6 +91,9 @@ struct Args {
     #[arg(long)]
     flakehub_cache_server: Option<reqwest::Url>,
 
+    #[arg(long)]
+    flakehub_flake_name: Option<String>,
+
     /// The location of `nix.conf`.
     #[arg(long)]
     nix_conf: PathBuf,
@@ -164,6 +167,15 @@ async fn main_cli() -> Result<()> {
         let flakehub_api_server_netrc = args
             .flakehub_api_server_netrc
             .ok_or_else(|| anyhow!("--flakehub-api-server-netrc is required"))?;
+        let flakehub_flake_name = args
+            .flakehub_flake_name
+            .ok_or_else(|| {
+                tracing::debug!(
+                    "--flakehub-flake-name was not set, inferring from $GITHUB_REPOSITORY env var"
+                );
+                std::env::var("GITHUB_REPOSITORY")
+            })
+            .map_err(|_| anyhow!("--flakehub-flake-name and $GITHUB_REPOSITORY were both unset"))?;
 
         match flakehub::init_cache(
             &args
@@ -171,6 +183,7 @@ async fn main_cli() -> Result<()> {
                 .ok_or_else(|| anyhow!("--flakehub-api-server is required"))?,
             &flakehub_api_server_netrc,
             &flakehub_cache_server,
+            &flakehub_flake_name,
             store.clone(),
         )
         .await

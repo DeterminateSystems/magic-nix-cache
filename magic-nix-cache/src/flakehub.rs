@@ -9,7 +9,6 @@ use attic_client::{
 };
 use reqwest::Url;
 use serde::Deserialize;
-use std::env;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -29,6 +28,7 @@ pub async fn init_cache(
     flakehub_api_server: &Url,
     flakehub_api_server_netrc: &Path,
     flakehub_cache_server: &Url,
+    flakehub_flake_name: &str,
     store: Arc<NixStore>,
 ) -> Result<State> {
     // Parse netrc to get the credentials for api.flakehub.com.
@@ -93,12 +93,8 @@ pub async fn init_cache(
 
     // Get the cache UUID for this project.
     let cache_name = {
-        let github_repo = env::var("GITHUB_REPOSITORY").map_err(|_| {
-            Error::Config("GITHUB_REPOSITORY environment variable is not set".to_owned())
-        })?;
-
         let url = flakehub_api_server
-            .join(&format!("project/{}", github_repo))
+            .join(&format!("project/{}", flakehub_flake_name))
             .map_err(|_| Error::Config(format!("bad URL '{}'", flakehub_api_server)))?;
 
         let response = reqwest::Client::new()
