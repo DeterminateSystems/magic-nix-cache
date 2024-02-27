@@ -45,6 +45,13 @@ jobs:
       - name: Persist the cache binary
         run: cp ./cache-binary-X64-Linux/magic-nix-cache.closure.xz ./artifacts/magic-nix-cache-X64-Linux
 
+      - uses: actions/download-artifact@v3
+        with:
+          name: magic-nix-cache-ARM64-Linux
+          path: cache-binary-ARM64-Linux
+      - name: Persist the cache binary
+        run: cp ./cache-binary-ARM64-Linux/magic-nix-cache ./artifacts/magic-nix-cache-ARM64-Linux
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
