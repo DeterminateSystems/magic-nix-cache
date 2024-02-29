@@ -61,8 +61,8 @@ async fn get_narinfo(
         return pull_through(&state, &path);
     }
 
-    if let Some(api) = &state.api {
-        if let Some(url) = api.get_file_url(&[&key]).await? {
+    if let Some(gha_cache) = &state.gha_cache {
+        if let Some(url) = gha_cache.api.get_file_url(&[&key]).await? {
             state.metrics.narinfos_served.incr();
             return Ok(Redirect::temporary(&url));
         }
@@ -75,6 +75,7 @@ async fn get_narinfo(
     state.metrics.narinfos_negative_cache_misses.incr();
     pull_through(&state, &path)
 }
+
 async fn put_narinfo(
     Extension(state): Extension<State>,
     Path(path): Path<String>,
@@ -90,15 +91,15 @@ async fn put_narinfo(
         return Err(Error::BadRequest);
     }
 
-    let api = state.api.as_ref().ok_or(Error::GHADisabled)?;
+    let gha_cache = state.gha_cache.as_ref().ok_or(Error::GHADisabled)?;
 
     let store_path_hash = components[0].to_string();
     let key = format!("{}.narinfo", store_path_hash);
-    let allocation = api.allocate_file_with_random_suffix(&key).await?;
+    let allocation = gha_cache.api.allocate_file_with_random_suffix(&key).await?;
     let stream = StreamReader::new(
         body.map(|r| r.map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))),
     );
-    api.upload_file(allocation, stream).await?;
+    gha_cache.api.upload_file(allocation, stream).await?;
     state.metrics.narinfos_uploaded.incr();
 
     state
@@ -112,9 +113,10 @@ async fn put_narinfo(
 
 async fn get_nar(Extension(state): Extension<State>, Path(path): Path<String>) -> Result<Redirect> {
     if let Some(url) = state
-        .api
+        .gha_cache
         .as_ref()
         .ok_or(Error::GHADisabled)?
+        .api
         .get_file_url(&[&path])
         .await?
     {
@@ -129,18 +131,22 @@ async fn get_nar(Extension(state): Extension<State>, Path(path): Path<String>) -
         Err(Error::NotFound)
     }
 }
+
 async fn put_nar(
     Extension(state): Extension<State>,
     Path(path): Path<String>,
     body: BodyStream,
 ) -> Result<()> {
-    let api = state.api.as_ref().ok_or(Error::GHADisabled)?;
+    let gha_cache = state.gha_cache.as_ref().ok_or(Error::GHADisabled)?;
 
-    let allocation = api.allocate_file_with_random_suffix(&path).await?;
+    let allocation = gha_cache
+        .api
+        .allocate_file_with_random_suffix(&path)
+        .await?;
     let stream = StreamReader::new(
         body.map(|r| r.map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))),
     );
-    api.upload_file(allocation, stream).await?;
+    gha_cache.api.upload_file(allocation, stream).await?;
     state.metrics.nars_uploaded.incr();
 
     Ok(())
