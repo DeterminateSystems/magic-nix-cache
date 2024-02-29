@@ -32,5 +32,5 @@ We should contribute support for the latter to [Octocrab](https://github.com/XAM
 Since GHAC uses private APIs that use special tokens for authentication, we need to get them from a workflow run.
 
 The easiest way is with the `keygen` workflow in this repo.
-Generate an `age` encryption key with `age-keygen -o key.txt`, and add the Public Key as a repository secret named `AGE_PUBLIC_KEY`.
+Generate an `age` encryption key with `nix shell nixpkgs#age --command age-keygen -o key.txt`, and add the Public Key as a repository secret named `AGE_PUBLIC_KEY`.
 Then, trigger the `keygen` workflow which will print out a command that will let you decrypt the credentials.
