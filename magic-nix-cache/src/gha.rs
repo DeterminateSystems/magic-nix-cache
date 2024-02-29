@@ -5,12 +5,13 @@ use crate::telemetry;
 use async_compression::tokio::bufread::ZstdEncoder;
 use attic::nix_store::{NixStore, StorePath, ValidPathInfo};
 use attic_server::narinfo::{Compression, NarInfo};
-use futures::stream::StreamExt;
+use futures::stream::TryStreamExt;
 use gha_cache::{Api, Credentials};
 use tokio::sync::{
     mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
     RwLock,
 };
+use tokio_util::compat::FuturesAsyncReadCompatExt;
 
 pub struct GhaCache {
     /// The GitHub Actions Cache API.
@@ -139,18 +140,15 @@ async fn upload_path(
 
     let nar_allocation = api.allocate_file_with_random_suffix(&nar_path).await?;
 
-    let mut nar_stream = store.nar_from_path(path.clone());
+    let nar_stream = store.nar_from_path(path.clone());
 
-    let mut nar: Vec<u8> = vec![];
+    let nar_reader = nar_stream
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))
+        .into_async_read();
 
-    // FIXME: make this streaming.
-    while let Some(data) = nar_stream.next().await {
-        nar.append(&mut data?);
-    }
+    let nar_compressor = ZstdEncoder::new(nar_reader.compat());
 
-    let reader = ZstdEncoder::new(&nar[..]);
-
-    let compressed_nar_size = api.upload_file(nar_allocation, reader).await?;
+    let compressed_nar_size = api.upload_file(nar_allocation, nar_compressor).await?;
     metrics.nars_uploaded.incr();
 
     tracing::info!(
