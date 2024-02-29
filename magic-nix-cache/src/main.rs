@@ -123,7 +123,7 @@ struct StateInner {
     shutdown_sender: Mutex<Option<oneshot::Sender<()>>>,
 
     /// Set of store path hashes that are not present in GHAC.
-    narinfo_nagative_cache: RwLock<HashSet<String>>,
+    narinfo_negative_cache: RwLock<HashSet<String>>,
 
     /// Metrics for sending to perf at shutdown
     metrics: Arc<telemetry::TelemetryReport>,
@@ -301,7 +301,7 @@ async fn main_cli() -> Result<()> {
         gha_cache,
         upstream: args.upstream.clone(),
         shutdown_sender: Mutex::new(Some(shutdown_sender)),
-        narinfo_nagative_cache: RwLock::new(HashSet::new()),
+        narinfo_negative_cache: RwLock::new(HashSet::new()),
         metrics,
         store,
         flakehub_state: RwLock::new(flakehub_state),

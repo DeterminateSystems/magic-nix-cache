@@ -51,7 +51,7 @@ async fn get_narinfo(
     let key = format!("{}.narinfo", store_path_hash);
 
     if state
-        .narinfo_nagative_cache
+        .narinfo_negative_cache
         .read()
         .await
         .contains(&store_path_hash)
@@ -68,7 +68,7 @@ async fn get_narinfo(
         }
     }
 
-    let mut negative_cache = state.narinfo_nagative_cache.write().await;
+    let mut negative_cache = state.narinfo_negative_cache.write().await;
     negative_cache.insert(store_path_hash);
 
     state.metrics.narinfos_sent_upstream.incr();
@@ -103,7 +103,7 @@ async fn put_narinfo(
     state.metrics.narinfos_uploaded.incr();
 
     state
-        .narinfo_nagative_cache
+        .narinfo_negative_cache
         .write()
         .await
         .remove(&store_path_hash);
