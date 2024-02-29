@@ -151,7 +151,7 @@ async fn upload_path(
     let compressed_nar_size = api.upload_file(nar_allocation, nar_compressor).await?;
     metrics.nars_uploaded.incr();
 
-    tracing::info!(
+    tracing::debug!(
         "Uploaded '{}' (size {} -> {})",
         nar_path,
         path_info.nar_size,
@@ -172,6 +172,11 @@ async fn upload_path(
     api.upload_file(narinfo_allocation, narinfo.as_bytes())
         .await?;
     metrics.narinfos_uploaded.incr();
+
+    tracing::info!(
+        "Uploaded '{}' to the GitHub Action Cache",
+        store.get_full_path(&path).display()
+    );
 
     Ok(())
 }
