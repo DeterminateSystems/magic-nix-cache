@@ -2,6 +2,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use crate::error::{Error, Result};
 use crate::telemetry;
+use async_compression::tokio::bufread::ZstdEncoder;
 use attic::nix_store::{NixStore, StorePath, ValidPathInfo};
 use attic_server::narinfo::{Compression, NarInfo};
 use futures::stream::StreamExt;
@@ -134,7 +135,7 @@ async fn upload_path(
     let path_info = store.query_path_info(path.clone()).await?;
 
     // Upload the NAR.
-    let nar_path = format!("nar/{}.nar", path_info.nar_hash.to_base32());
+    let nar_path = format!("{}.nar.zstd", path_info.nar_hash.to_base32());
 
     let nar_allocation = api.allocate_file_with_random_suffix(&nar_path).await?;
 
@@ -142,26 +143,33 @@ async fn upload_path(
 
     let mut nar: Vec<u8> = vec![];
 
-    // FIXME: make this streaming and compress.
+    // FIXME: make this streaming.
     while let Some(data) = nar_stream.next().await {
         nar.append(&mut data?);
     }
 
-    tracing::info!("Uploading NAR {} (size {})", nar_path, nar.len());
+    let reader = ZstdEncoder::new(&nar[..]);
 
-    api.upload_file(nar_allocation, &nar[..]).await?;
+    let compressed_nar_size = api.upload_file(nar_allocation, reader).await?;
     metrics.nars_uploaded.incr();
+
+    tracing::info!(
+        "Uploaded '{}' (size {} -> {})",
+        nar_path,
+        path_info.nar_size,
+        compressed_nar_size
+    );
 
     // Upload the narinfo.
     let narinfo_path = format!("{}.narinfo", path.to_hash());
 
     let narinfo_allocation = api.allocate_file_with_random_suffix(&narinfo_path).await?;
 
-    let narinfo = path_info_to_nar_info(store.clone(), &path_info, nar_path)
+    let narinfo = path_info_to_nar_info(store.clone(), &path_info, format!("nar/{}", nar_path))
         .to_string()
         .unwrap();
 
-    tracing::info!("Uploading {}: {}", narinfo_path, narinfo);
+    tracing::debug!("Uploading '{}'", narinfo_path);
 
     api.upload_file(narinfo_allocation, narinfo.as_bytes())
         .await?;
@@ -175,7 +183,7 @@ fn path_info_to_nar_info(store: Arc<NixStore>, path_info: &ValidPathInfo, url: S
     NarInfo {
         store_path: store.get_full_path(&path_info.path),
         url,
-        compression: Compression::None,
+        compression: Compression::Zstd,
         file_hash: None,
         file_size: None,
         nar_hash: path_info.nar_hash.clone(),
