@@ -22,9 +22,6 @@ pub enum Error {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("Failed to upload paths")]
-    FailedToUpload,
-
     #[error("GHA cache is disabled")]
     GHADisabled,
 

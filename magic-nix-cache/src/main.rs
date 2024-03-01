@@ -16,8 +16,8 @@ mod api;
 mod binary_cache;
 mod error;
 mod flakehub;
+mod gha;
 mod telemetry;
-mod util;
 
 use std::collections::HashSet;
 use std::fs::{self, create_dir_all, OpenOptions};
@@ -35,7 +35,7 @@ use tempfile::NamedTempFile;
 use tokio::sync::{oneshot, Mutex, RwLock};
 use tracing_subscriber::filter::EnvFilter;
 
-use gha_cache::{Api, Credentials};
+use gha_cache::Credentials;
 
 type State = Arc<StateInner>;
 
@@ -91,6 +91,9 @@ struct Args {
     #[arg(long)]
     flakehub_cache_server: Option<reqwest::Url>,
 
+    #[arg(long)]
+    flakehub_flake_name: Option<String>,
+
     /// The location of `nix.conf`.
     #[arg(long)]
     nix_conf: PathBuf,
@@ -110,8 +113,8 @@ struct Args {
 
 /// The global server state.
 struct StateInner {
-    /// The GitHub Actions Cache API.
-    api: Option<Api>,
+    /// State for uploading to the GHA cache.
+    gha_cache: Option<gha::GhaCache>,
 
     /// The upstream cache.
     upstream: Option<String>,
@@ -119,19 +122,11 @@ struct StateInner {
     /// The sender half of the oneshot channel to trigger a shutdown.
     shutdown_sender: Mutex<Option<oneshot::Sender<()>>>,
 
-    /// List of store paths originally present.
-    original_paths: Mutex<HashSet<PathBuf>>,
-
     /// Set of store path hashes that are not present in GHAC.
-    narinfo_nagative_cache: RwLock<HashSet<String>>,
-
-    /// Endpoint of ourselves.
-    ///
-    /// This is used by our Action API to invoke `nix copy` to upload new paths.
-    self_endpoint: SocketAddr,
+    narinfo_negative_cache: Arc<RwLock<HashSet<String>>>,
 
     /// Metrics for sending to perf at shutdown
-    metrics: telemetry::TelemetryReport,
+    metrics: Arc<telemetry::TelemetryReport>,
 
     /// Connection to the local Nix store.
     store: Arc<NixStore>,
@@ -145,6 +140,8 @@ async fn main_cli() -> Result<()> {
 
     let args = Args::parse();
 
+    let metrics = Arc::new(telemetry::TelemetryReport::new());
+
     if let Some(parent) = Path::new(&args.nix_conf).parent() {
         create_dir_all(parent).with_context(|| "Creating parent directories of nix.conf")?;
     }
@@ -157,6 +154,8 @@ async fn main_cli() -> Result<()> {
 
     let store = Arc::new(NixStore::connect()?);
 
+    let narinfo_negative_cache = Arc::new(RwLock::new(HashSet::new()));
+
     let flakehub_state = if args.use_flakehub {
         let flakehub_cache_server = args
             .flakehub_cache_server
@@ -164,6 +163,15 @@ async fn main_cli() -> Result<()> {
         let flakehub_api_server_netrc = args
             .flakehub_api_server_netrc
             .ok_or_else(|| anyhow!("--flakehub-api-server-netrc is required"))?;
+        let flakehub_flake_name = args
+            .flakehub_flake_name
+            .ok_or_else(|| {
+                tracing::debug!(
+                    "--flakehub-flake-name was not set, inferring from $GITHUB_REPOSITORY env var"
+                );
+                std::env::var("GITHUB_REPOSITORY")
+            })
+            .map_err(|_| anyhow!("--flakehub-flake-name and $GITHUB_REPOSITORY were both unset"))?;
 
         match flakehub::init_cache(
             &args
@@ -171,6 +179,7 @@ async fn main_cli() -> Result<()> {
                 .ok_or_else(|| anyhow!("--flakehub-api-server is required"))?,
             &flakehub_api_server_netrc,
             &flakehub_cache_server,
+            &flakehub_flake_name,
             store.clone(),
         )
         .await
@@ -200,7 +209,7 @@ async fn main_cli() -> Result<()> {
         None
     };
 
-    let api = if args.use_gha_cache {
+    let gha_cache = if args.use_gha_cache {
         let credentials = if let Some(credentials_file) = &args.credentials_file {
             tracing::info!("Loading credentials from {:?}", credentials_file);
             let bytes = fs::read(credentials_file).with_context(|| {
@@ -222,19 +231,21 @@ async fn main_cli() -> Result<()> {
                 .with_context(|| "Failed to load credentials from environment (see README.md)")?
         };
 
-        let mut api = Api::new(credentials)
-            .with_context(|| "Failed to initialize GitHub Actions Cache API")?;
-
-        if let Some(cache_version) = &args.cache_version {
-            api.mutate_version(cache_version.as_bytes());
-        }
+        let gha_cache = gha::GhaCache::new(
+            credentials,
+            args.cache_version,
+            store.clone(),
+            metrics.clone(),
+            narinfo_negative_cache.clone(),
+        )
+        .with_context(|| "Failed to initialize GitHub Actions Cache API")?;
 
         nix_conf
             .write_all(format!("extra-substituters = http://{}?trusted=1&compression=zstd&parallel-compression=true&priority=1\n", args.listen).as_bytes())
             .with_context(|| "Writing to nix.conf")?;
 
         tracing::info!("Native GitHub Action cache is enabled.");
-        Some(api)
+        Some(gha_cache)
     } else {
         tracing::info!("Native GitHub Action cache is disabled.");
         None
@@ -290,13 +301,11 @@ async fn main_cli() -> Result<()> {
     let (shutdown_sender, shutdown_receiver) = oneshot::channel();
 
     let state = Arc::new(StateInner {
-        api,
+        gha_cache,
         upstream: args.upstream.clone(),
         shutdown_sender: Mutex::new(Some(shutdown_sender)),
-        original_paths: Mutex::new(HashSet::new()),
-        narinfo_nagative_cache: RwLock::new(HashSet::new()),
-        self_endpoint: args.listen.to_owned(),
-        metrics: telemetry::TelemetryReport::new(),
+        narinfo_negative_cache,
+        metrics,
         store,
         flakehub_state: RwLock::new(flakehub_state),
     });
@@ -438,8 +447,8 @@ async fn dump_api_stats<B>(
     request: axum::http::Request<B>,
     next: axum::middleware::Next<B>,
 ) -> axum::response::Response {
-    if let Some(api) = &state.api {
-        api.dump_stats();
+    if let Some(gha_cache) = &state.gha_cache {
+        gha_cache.api.dump_stats();
     }
     next.run(request).await
 }

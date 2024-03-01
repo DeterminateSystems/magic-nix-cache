@@ -4,6 +4,9 @@
 , nix
 , boost
 , darwin
+, rust-analyzer
+, clippy
+, rustfmt
 }:
 
 let
@@ -21,6 +24,9 @@ in rustPlatform.buildRustPackage rec {
   nativeBuildInputs = [
     pkg-config
     installShellFiles
+    rust-analyzer
+    clippy
+    rustfmt
   ];
 
   buildInputs = [

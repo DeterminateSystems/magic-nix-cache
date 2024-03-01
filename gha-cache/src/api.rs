@@ -319,8 +319,8 @@ impl Api {
         Err(Error::TooManyCollisions)
     }
 
-    /// Uploads a file.
-    pub async fn upload_file<S>(&self, allocation: FileAllocation, mut stream: S) -> Result<()>
+    /// Uploads a file. Returns the size of the file.
+    pub async fn upload_file<S>(&self, allocation: FileAllocation, mut stream: S) -> Result<usize>
     where
         S: AsyncRead + Unpin + Send,
     {
@@ -396,7 +396,7 @@ impl Api {
 
         self.commit_cache(allocation.0, offset).await?;
 
-        Ok(())
+        Ok(offset)
     }
 
     /// Downloads a file based on a list of key prefixes.
