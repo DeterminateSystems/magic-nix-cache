@@ -123,7 +123,7 @@ struct StateInner {
     shutdown_sender: Mutex<Option<oneshot::Sender<()>>>,
 
     /// Set of store path hashes that are not present in GHAC.
-    narinfo_negative_cache: RwLock<HashSet<String>>,
+    narinfo_negative_cache: Arc<RwLock<HashSet<String>>>,
 
     /// Metrics for sending to perf at shutdown
     metrics: Arc<telemetry::TelemetryReport>,
@@ -153,6 +153,8 @@ async fn main_cli() -> Result<()> {
         .with_context(|| "Creating nix.conf")?;
 
     let store = Arc::new(NixStore::connect()?);
+
+    let narinfo_negative_cache = Arc::new(RwLock::new(HashSet::new()));
 
     let flakehub_state = if args.use_flakehub {
         let flakehub_cache_server = args
@@ -234,6 +236,7 @@ async fn main_cli() -> Result<()> {
             args.cache_version,
             store.clone(),
             metrics.clone(),
+            narinfo_negative_cache.clone(),
         )
         .with_context(|| "Failed to initialize GitHub Actions Cache API")?;
 
@@ -301,7 +304,7 @@ async fn main_cli() -> Result<()> {
         gha_cache,
         upstream: args.upstream.clone(),
         shutdown_sender: Mutex::new(Some(shutdown_sender)),
-        narinfo_negative_cache: RwLock::new(HashSet::new()),
+        narinfo_negative_cache,
         metrics,
         store,
         flakehub_state: RwLock::new(flakehub_state),

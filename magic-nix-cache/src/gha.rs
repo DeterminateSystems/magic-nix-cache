@@ -35,6 +35,7 @@ impl GhaCache {
         cache_version: Option<String>,
         store: Arc<NixStore>,
         metrics: Arc<telemetry::TelemetryReport>,
+        narinfo_negative_cache: Arc<RwLock<HashSet<String>>>,
     ) -> Result<GhaCache> {
         let mut api = Api::new(credentials)?;
 
@@ -48,8 +49,16 @@ impl GhaCache {
 
         let api2 = api.clone();
 
-        let worker_result =
-            tokio::task::spawn(async move { worker(&api2, store, channel_rx, metrics).await });
+        let worker_result = tokio::task::spawn(async move {
+            worker(
+                &api2,
+                store,
+                channel_rx,
+                metrics,
+                narinfo_negative_cache.clone(),
+            )
+            .await
+        });
 
         Ok(GhaCache {
             api,
@@ -100,6 +109,7 @@ async fn worker(
     store: Arc<NixStore>,
     mut channel_rx: UnboundedReceiver<Request>,
     metrics: Arc<telemetry::TelemetryReport>,
+    narinfo_negative_cache: Arc<RwLock<HashSet<String>>>,
 ) -> Result<()> {
     let mut done = HashSet::new();
 
@@ -113,7 +123,15 @@ async fn worker(
                     continue;
                 }
 
-                if let Err(err) = upload_path(api, store.clone(), &path, metrics.clone()).await {
+                if let Err(err) = upload_path(
+                    api,
+                    store.clone(),
+                    &path,
+                    metrics.clone(),
+                    narinfo_negative_cache.clone(),
+                )
+                .await
+                {
                     tracing::error!(
                         "Upload of path '{}' failed: {}",
                         store.get_full_path(&path).display(),
@@ -132,6 +150,7 @@ async fn upload_path(
     store: Arc<NixStore>,
     path: &StorePath,
     metrics: Arc<telemetry::TelemetryReport>,
+    narinfo_negative_cache: Arc<RwLock<HashSet<String>>>,
 ) -> Result<()> {
     let path_info = store.query_path_info(path.clone()).await?;
 
@@ -173,9 +192,14 @@ async fn upload_path(
         .await?;
     metrics.narinfos_uploaded.incr();
 
+    narinfo_negative_cache
+        .write()
+        .await
+        .remove(&path.to_hash().to_string());
+
     tracing::info!(
         "Uploaded '{}' to the GitHub Action Cache",
-        store.get_full_path(&path).display()
+        store.get_full_path(path).display()
     );
 
     Ok(())
