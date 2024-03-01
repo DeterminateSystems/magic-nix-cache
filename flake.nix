@@ -17,7 +17,7 @@
 
     flake-compat.url = "https://flakehub.com/f/edolstra/flake-compat/1.0.1.tar.gz";
 
-    nix.url = "https://flakehub.com/f/NixOS/nix/2.19.tar.gz";
+    nix.url = "https://flakehub.com/f/NixOS/nix/2.20.tar.gz";
   };
 
   outputs = { self, nixpkgs, nix, ... }@inputs:
@@ -46,6 +46,7 @@
         default = magic-nix-cache;
       });
 
+      /*
       devShells = forEachSupportedSystem ({ pkgs, cranePkgs, lib }: {
         default = pkgs.mkShell {
           inputsFrom = [ cranePkgs.magic-nix-cache ];
@@ -156,5 +157,6 @@
           ];
         };
       });
+      */
     };
 }
