@@ -56,6 +56,10 @@ pub enum Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let code = match &self {
+            Self::Api(gha_cache::api::Error::ApiError {
+                status: StatusCode::TOO_MANY_REQUESTS,
+                ..
+            }) => StatusCode::TOO_MANY_REQUESTS,
             // HACK: HTTP 418 makes Nix throw a visible error but not retry
             Self::Api(_) => StatusCode::IM_A_TEAPOT,
             Self::NotFound => StatusCode::NOT_FOUND,
