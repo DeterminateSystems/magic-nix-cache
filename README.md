@@ -41,6 +41,9 @@ on:
 jobs:
   check:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v3
       - uses: DeterminateSystems/nix-installer-action@main
@@ -127,4 +130,3 @@ You can read the full privacy policy for [Determinate Systems][detsys], the crea
 [attic]: https://github.com/zhaofengli/attic
 [colmena]: https://github.com/zhaofengli/colmena
 [z2n]: https://zero-to-nix.com
-
