@@ -7,6 +7,9 @@ on:
 jobs:
   build-artifacts-ARM64-macOS:
     runs-on: macos-latest-xlarge
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v3
 
@@ -27,6 +30,9 @@ jobs:
 
   build-artifacts-X64-macOS:
     runs-on: macos-12
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v3
 
@@ -49,6 +55,9 @@ jobs:
 
   build-artifacts-X64-Linux:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v3
 
@@ -71,6 +80,9 @@ jobs:
 
   build-artifacts-ARM64-Linux:
     runs-on: namespace-profile-default-arm64
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v3
 
