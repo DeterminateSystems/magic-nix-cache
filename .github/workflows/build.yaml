@@ -93,12 +93,12 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Build package
-        run: "nix build .# -L --fallback"
+        run: "nix build .# -L --fallback && nix-store --export $(nix-store -qR ./result) | xz -9 > magic-nix-cache.closure.xz"
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
           name: magic-nix-cache-ARM64-Linux
-          path: result/bin/magic-nix-cache
+          path: magic-nix-cache.closure.xz
           retention-days: 1
