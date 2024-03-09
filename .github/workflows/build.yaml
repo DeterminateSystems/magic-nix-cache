@@ -90,7 +90,7 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@main
 
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@v3
 
       - name: Build package
         run: "nix build .# -L --fallback && nix-store --export $(nix-store -qR ./result) | xz -9 > magic-nix-cache.closure.xz"
