@@ -6,7 +6,14 @@ Use Magic Nix Cache, a totally free and zero-configuration binary cache for Nix 
 Add our [GitHub Action][action] after installing Nix, in your workflow, like this:
 
 ```yaml
-- uses: DeterminateSystems/magic-nix-cache-action@main
+permissions:
+  contents: read
+  id-token: write
+steps:
+  - uses: actions/checkout@v3
+  - uses: DeterminateSystems/nix-installer-action@main
+  - uses: DeterminateSystems/magic-nix-cache-action@main
+  - run: nix flake check
 ```
 
 See [Usage](#usage) for a detailed example.
