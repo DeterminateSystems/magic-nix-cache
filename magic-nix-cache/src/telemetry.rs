@@ -1,7 +1,6 @@
 use std::env;
 use std::time::SystemTime;
 
-use is_ci;
 use sha2::{Digest, Sha256};
 
 /// A telemetry report to measure the effectiveness of the Magic Nix Cache
@@ -34,11 +33,11 @@ pub struct TelemetryReport {
 #[derive(Debug, Default, serde::Serialize)]
 pub struct Metric(std::sync::atomic::AtomicUsize);
 impl Metric {
-    pub fn incr(&self) -> () {
+    pub fn incr(&self) {
         self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    pub fn set(&self, val: usize) -> () {
+    pub fn set(&self, val: usize) {
         self.0.store(val, std::sync::atomic::Ordering::Relaxed);
     }
 }
@@ -57,7 +56,7 @@ impl TelemetryReport {
         }
     }
 
-    pub fn send(&self, endpoint: &str) {
+    pub async fn send(&self, endpoint: &str) {
         if let Some(start_time) = self.start_time {
             self.elapsed_seconds.set(
                 SystemTime::now()
@@ -70,12 +69,13 @@ impl TelemetryReport {
         }
 
         if let Ok(serialized) = serde_json::to_string_pretty(&self) {
-            let _ = reqwest::blocking::Client::new()
+            let _ = reqwest::Client::new()
                 .post(endpoint)
                 .body(serialized)
                 .header("Content-Type", "application/json")
                 .timeout(std::time::Duration::from_millis(3000))
-                .send();
+                .send()
+                .await;
         }
     }
 }

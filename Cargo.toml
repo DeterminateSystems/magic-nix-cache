@@ -3,6 +3,7 @@ members = [
 	"gha-cache",
 	"magic-nix-cache",
 ]
+resolver = "2"
 
 [profile.release]
 opt-level = 'z'

@@ -6,7 +6,14 @@ Use Magic Nix Cache, a totally free and zero-configuration binary cache for Nix 
 Add our [GitHub Action][action] after installing Nix, in your workflow, like this:
 
 ```yaml
-- uses: DeterminateSystems/magic-nix-cache-action@main
+permissions:
+  contents: read
+  id-token: write
+steps:
+  - uses: actions/checkout@v3
+  - uses: DeterminateSystems/nix-installer-action@mnc
+  - uses: DeterminateSystems/magic-nix-cache-action@main
+  - run: nix flake check
 ```
 
 See [Usage](#usage) for a detailed example.
@@ -41,9 +48,12 @@ on:
 jobs:
   check:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v3
-      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/nix-installer-action@mnc
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - run: nix flake check
 ```
@@ -127,4 +137,3 @@ You can read the full privacy policy for [Determinate Systems][detsys], the crea
 [attic]: https://github.com/zhaofengli/attic
 [colmena]: https://github.com/zhaofengli/colmena
 [z2n]: https://zero-to-nix.com
-

@@ -51,7 +51,7 @@ async fn get_narinfo(
     let key = format!("{}.narinfo", store_path_hash);
 
     if state
-        .narinfo_nagative_cache
+        .narinfo_negative_cache
         .read()
         .await
         .contains(&store_path_hash)
@@ -61,18 +61,21 @@ async fn get_narinfo(
         return pull_through(&state, &path);
     }
 
-    if let Some(url) = state.api.get_file_url(&[&key]).await? {
-        state.metrics.narinfos_served.incr();
-        return Ok(Redirect::temporary(&url));
+    if let Some(gha_cache) = &state.gha_cache {
+        if let Some(url) = gha_cache.api.get_file_url(&[&key]).await? {
+            state.metrics.narinfos_served.incr();
+            return Ok(Redirect::temporary(&url));
+        }
     }
 
-    let mut negative_cache = state.narinfo_nagative_cache.write().await;
+    let mut negative_cache = state.narinfo_negative_cache.write().await;
     negative_cache.insert(store_path_hash);
 
     state.metrics.narinfos_sent_upstream.incr();
     state.metrics.narinfos_negative_cache_misses.incr();
     pull_through(&state, &path)
 }
+
 async fn put_narinfo(
     Extension(state): Extension<State>,
     Path(path): Path<String>,
@@ -88,17 +91,19 @@ async fn put_narinfo(
         return Err(Error::BadRequest);
     }
 
+    let gha_cache = state.gha_cache.as_ref().ok_or(Error::GHADisabled)?;
+
     let store_path_hash = components[0].to_string();
     let key = format!("{}.narinfo", store_path_hash);
-    let allocation = state.api.allocate_file_with_random_suffix(&key).await?;
+    let allocation = gha_cache.api.allocate_file_with_random_suffix(&key).await?;
     let stream = StreamReader::new(
         body.map(|r| r.map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))),
     );
-    state.api.upload_file(allocation, stream).await?;
+    gha_cache.api.upload_file(allocation, stream).await?;
     state.metrics.narinfos_uploaded.incr();
 
     state
-        .narinfo_nagative_cache
+        .narinfo_negative_cache
         .write()
         .await
         .remove(&store_path_hash);
@@ -107,7 +112,14 @@ async fn put_narinfo(
 }
 
 async fn get_nar(Extension(state): Extension<State>, Path(path): Path<String>) -> Result<Redirect> {
-    if let Some(url) = state.api.get_file_url(&[&path]).await? {
+    if let Some(url) = state
+        .gha_cache
+        .as_ref()
+        .ok_or(Error::GHADisabled)?
+        .api
+        .get_file_url(&[&path])
+        .await?
+    {
         state.metrics.nars_served.incr();
         return Ok(Redirect::temporary(&url));
     }
@@ -119,16 +131,22 @@ async fn get_nar(Extension(state): Extension<State>, Path(path): Path<String>) -
         Err(Error::NotFound)
     }
 }
+
 async fn put_nar(
     Extension(state): Extension<State>,
     Path(path): Path<String>,
     body: BodyStream,
 ) -> Result<()> {
-    let allocation = state.api.allocate_file_with_random_suffix(&path).await?;
+    let gha_cache = state.gha_cache.as_ref().ok_or(Error::GHADisabled)?;
+
+    let allocation = gha_cache
+        .api
+        .allocate_file_with_random_suffix(&path)
+        .await?;
     let stream = StreamReader::new(
         body.map(|r| r.map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))),
     );
-    state.api.upload_file(allocation, stream).await?;
+    gha_cache.api.upload_file(allocation, stream).await?;
     state.metrics.nars_uploaded.incr();
 
     Ok(())

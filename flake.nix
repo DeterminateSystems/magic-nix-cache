@@ -2,7 +2,7 @@
   description = "GitHub Actions-powered Nix binary cache";
 
   inputs = {
-    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1.533189.tar.gz";
+    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.2311.tar.gz";
 
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
@@ -16,11 +16,13 @@
     };
 
     flake-compat.url = "https://flakehub.com/f/edolstra/flake-compat/1.0.1.tar.gz";
+
+    nix.url = "https://flakehub.com/f/NixOS/nix/2.20.tar.gz";
   };
 
-  outputs = { self, nixpkgs, ... }@inputs:
+  outputs = { self, nixpkgs, nix, ... }@inputs:
     let
-      overlays = [ inputs.rust-overlay.overlays.default ];
+      overlays = [ inputs.rust-overlay.overlays.default nix.overlays.default ];
       supportedSystems = [
         "aarch64-linux"
         "x86_64-linux"
@@ -32,18 +34,36 @@
         cranePkgs = pkgs.callPackage ./crane.nix {
           inherit supportedSystems;
           inherit (inputs) crane;
+          nix-flake = nix;
         };
         inherit (pkgs) lib;
       });
     in
     {
       packages = forEachSupportedSystem ({ pkgs, cranePkgs, ... }: rec {
-        inherit (cranePkgs) magic-nix-cache;
+        magic-nix-cache = pkgs.callPackage ./package.nix { };
+        #inherit (cranePkgs) magic-nix-cache;
         default = magic-nix-cache;
       });
 
+      /*
       devShells = forEachSupportedSystem ({ pkgs, cranePkgs, lib }: {
-        default = pkgs.mkShell ({
+        default = pkgs.mkShell {
+          inputsFrom = [ cranePkgs.magic-nix-cache ];
+          packages = with pkgs; [
+            bashInteractive
+            cranePkgs.rustNightly
+
+            cargo-bloat
+            cargo-edit
+            cargo-udeps
+            cargo-watch
+
+            age
+          ];
+        };
+
+        cross = pkgs.mkShell ({
           inputsFrom = [ cranePkgs.magic-nix-cache ];
           packages = with pkgs; [
             bashInteractive
@@ -137,5 +157,6 @@
           ];
         };
       });
+      */
     };
 }
