@@ -260,7 +260,7 @@ async fn main_cli() -> Result<()> {
             format!(
                 // NOTE(cole-h): We want to exit 0 even if the hook failed, otherwise it'll fail the
                 // build itself
-                "#! /bin/sh\nRUST_BACKTRACE=full {} --server {}\nexit 0\n",
+                "#! /bin/sh\nexec RUST_LOG=trace RUST_BACKTRACE=full {} --server {}\n",
                 std::env::current_exe()
                     .with_context(|| "Getting the path of magic-nix-cache")?
                     .display(),
