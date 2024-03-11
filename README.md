@@ -11,7 +11,7 @@ permissions:
   id-token: write
 steps:
   - uses: actions/checkout@v3
-  - uses: DeterminateSystems/nix-installer-action@main
+  - uses: DeterminateSystems/nix-installer-action@mnc
   - uses: DeterminateSystems/magic-nix-cache-action@main
   - run: nix flake check
 ```
@@ -53,7 +53,7 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v3
-      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/nix-installer-action@mnc
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - run: nix flake check
 ```
