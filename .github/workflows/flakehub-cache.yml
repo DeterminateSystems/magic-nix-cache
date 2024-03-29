@@ -21,6 +21,8 @@ jobs:
             runner: "macos-12"
           - nix-system: "x86_64-linux"
             runner: "ubuntu-22.04"
+        shells:
+          - default
     steps:
       - uses: actions/checkout@v3
       - uses: DeterminateSystems/nix-installer-action@main

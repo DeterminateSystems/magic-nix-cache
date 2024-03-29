@@ -46,7 +46,6 @@
         default = magic-nix-cache;
       });
 
-      /*
       devShells = forEachSupportedSystem ({ pkgs, cranePkgs, lib }: {
         default = pkgs.mkShell {
           inputsFrom = [ cranePkgs.magic-nix-cache ];
@@ -63,6 +62,7 @@
           ];
         };
 
+        /*
         cross = pkgs.mkShell ({
           inputsFrom = [ cranePkgs.magic-nix-cache ];
           packages = with pkgs; [
@@ -156,7 +156,7 @@
             age
           ];
         };
+        */
       });
-      */
     };
 }
