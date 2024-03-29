@@ -18,6 +18,7 @@ use uuid::Uuid;
 const USER_AGENT: &str = "magic-nix-cache";
 
 pub struct State {
+    #[allow(dead_code)]
     pub substituter: Url,
 
     pub push_session: PushSession,

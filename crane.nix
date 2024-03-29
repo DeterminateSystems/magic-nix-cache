@@ -12,7 +12,7 @@
 let
   inherit (stdenv.hostPlatform) system;
 
-  nightlyVersion = "2023-05-01";
+  nightlyVersion = "2024-03-28";
   rustNightly = (pkgs.rust-bin.nightly.${nightlyVersion}.default.override {
     extensions = [ "rust-src" "rust-analyzer-preview" ];
     targets = cargoTargets;
