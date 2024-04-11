@@ -45,7 +45,9 @@ impl Metric {
 impl TelemetryReport {
     pub fn new() -> TelemetryReport {
         TelemetryReport {
-            distinct_id: calculate_opaque_id().ok(),
+            distinct_id: env::var("DETSYS_CORRELATION")
+                .ok()
+                .or_else(|| calculate_opaque_id().ok()),
 
             version: env!("CARGO_PKG_VERSION").to_string(),
             is_ci: is_ci::cached(),
