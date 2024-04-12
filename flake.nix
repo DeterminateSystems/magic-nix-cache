@@ -10,9 +10,8 @@
     };
 
     crane = {
-      url = "https://flakehub.com/f/ipetkov/crane/0.14.1.tar.gz";
+      url = "https://flakehub.com/f/ipetkov/crane/0.16.3.tar.gz";
       inputs.nixpkgs.follows = "nixpkgs";
-      inputs.flake-compat.follows = "flake-compat";
     };
 
     flake-compat.url = "https://flakehub.com/f/edolstra/flake-compat/1.0.1.tar.gz";
@@ -46,7 +45,6 @@
         default = magic-nix-cache;
       });
 
-      /*
       devShells = forEachSupportedSystem ({ pkgs, cranePkgs, lib }: {
         default = pkgs.mkShell {
           inputsFrom = [ cranePkgs.magic-nix-cache ];
@@ -63,6 +61,7 @@
           ];
         };
 
+        /*
         cross = pkgs.mkShell ({
           inputsFrom = [ cranePkgs.magic-nix-cache ];
           packages = with pkgs; [
@@ -156,7 +155,7 @@
             age
           ];
         };
+        */
       });
-      */
     };
 }
