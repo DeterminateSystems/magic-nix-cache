@@ -32,6 +32,7 @@ use anyhow::{anyhow, Context, Result};
 use axum::{extract::Extension, routing::get, Router};
 use clap::Parser;
 use tempfile::NamedTempFile;
+use tokio::process::Command;
 use tokio::sync::{oneshot, Mutex, RwLock};
 use tracing_subscriber::filter::EnvFilter;
 
@@ -269,13 +270,34 @@ async fn main_cli() -> Result<()> {
             .as_bytes(),
         )
         .with_context(|| "Writing the post-build hook")?;
-        file.keep()
+        let path = file
+            .keep()
             .with_context(|| "Keeping the post-build hook")?
-            .1
-    };
+            .1;
 
-    fs::set_permissions(&post_build_hook_script, fs::Permissions::from_mode(0o755))
-        .with_context(|| "Setting permissions on the post-build hook")?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+            .with_context(|| "Setting permissions on the post-build hook")?;
+
+        /* Copy the script to the Nix store so we know for sure that
+         * it's accessible to the Nix daemon, which might have a
+         * different /tmp from us. */
+        let res = Command::new("nix")
+            .args([
+                "--extra-experimental-features",
+                "nix-command",
+                "store",
+                "add-path",
+                &path.display().to_string(),
+            ])
+            .output()
+            .await?;
+        if res.status.success() {
+            tokio::fs::remove_file(path).await?;
+            PathBuf::from(String::from_utf8_lossy(&res.stdout).trim())
+        } else {
+            path
+        }
+    };
 
     /* Update nix.conf. */
     nix_conf
