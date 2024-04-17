@@ -232,7 +232,7 @@ dependencies = [
 [[package]]
 name = "attic"
 version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#aa0a6b9b59bc54070e0e97bfb84053f81fbef205"
+source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#536a0614711754ccfd3df050025b5aff612635ff"
 dependencies = [
  "async-stream",
  "base64",
@@ -262,7 +262,7 @@ dependencies = [
 [[package]]
 name = "attic-client"
 version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#aa0a6b9b59bc54070e0e97bfb84053f81fbef205"
+source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#536a0614711754ccfd3df050025b5aff612635ff"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -293,7 +293,7 @@ dependencies = [
 [[package]]
 name = "attic-server"
 version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#aa0a6b9b59bc54070e0e97bfb84053f81fbef205"
+source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#536a0614711754ccfd3df050025b5aff612635ff"
 dependencies = [
  "anyhow",
  "async-compression",
@@ -344,7 +344,7 @@ dependencies = [
 [[package]]
 name = "attic-token"
 version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#aa0a6b9b59bc54070e0e97bfb84053f81fbef205"
+source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#536a0614711754ccfd3df050025b5aff612635ff"
 dependencies = [
  "attic",
  "base64",
