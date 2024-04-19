@@ -7,12 +7,14 @@ use attic_client::{
     config::ServerConfig,
     push::{PushConfig, Pusher},
 };
+use reqwest::header::HeaderValue;
 use reqwest::Url;
 use serde::Deserialize;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 const USER_AGENT: &str = "magic-nix-cache";
@@ -62,7 +64,7 @@ pub async fn init_cache(
         ))
     })?;
 
-    let flakehub_password = flakehub_netrc_entry.password.as_ref().ok_or_else(|| {
+    let flakehub_password = flakehub_netrc_entry.password.ok_or_else(|| {
         Error::Config(format!(
             "netrc file does not contain a password for '{}'",
             flakehub_api_server
@@ -91,6 +93,32 @@ pub async fn init_cache(
             .await?;
     }
 
+    let server_config = ServerConfig {
+        endpoint: flakehub_cache_server.to_string(),
+        token: Some(attic_client::config::ServerTokenConfig::Raw {
+            token: flakehub_password.clone(),
+        }),
+    };
+    let api_inner = ApiClient::from_server_config(server_config)?;
+    let api = Arc::new(RwLock::new(api_inner));
+
+    // NOTE(cole-h): This is a workaround -- at the time of writing, GitHub Actions JWTs are only
+    // valid for 5 minutes after being issued. FlakeHub uses these JWTs for authentication, which
+    // means that after those 5 minutes have passed and the token is expired, FlakeHub (and by
+    // extension FlakeHub Cache) will no longer allow requests using this token. However, GitHub
+    // gives us a way to repeatedly request new tokens, so we utilize that and refresh the token
+    // every 2 minutes (less than half of the lifetime of the token).
+    let netrc_path_clone = flakehub_api_server_netrc.to_path_buf();
+    let initial_github_jwt_clone = flakehub_password.clone();
+    let flakehub_cache_server_clone = flakehub_cache_server.to_string();
+    let api_clone = api.clone();
+    tokio::task::spawn(refresh_github_actions_jwt_worker(
+        netrc_path_clone,
+        initial_github_jwt_clone,
+        flakehub_cache_server_clone,
+        api_clone,
+    ));
+
     // Get the cache UUID for this project.
     let cache_name = {
         let url = flakehub_api_server
@@ -100,7 +128,7 @@ pub async fn init_cache(
         let response = reqwest::Client::new()
             .get(url.to_owned())
             .header("User-Agent", USER_AGENT)
-            .basic_auth(flakehub_login, Some(flakehub_password))
+            .basic_auth(flakehub_login, Some(&flakehub_password))
             .send()
             .await?;
 
@@ -129,16 +157,7 @@ pub async fn init_cache(
 
     let cache = unsafe { CacheName::new_unchecked(cache_name) };
 
-    let api = ApiClient::from_server_config(ServerConfig {
-        endpoint: flakehub_cache_server.to_string(),
-        token: flakehub_netrc_entry
-            .password
-            .map(|token| attic_client::config::ServerTokenConfig::Raw { token })
-            .as_ref()
-            .cloned(),
-    })?;
-
-    let cache_config = api.get_cache_config(&cache).await?;
+    let cache_config = api.read().await.get_cache_config(&cache).await?;
 
     let push_config = PushConfig {
         num_workers: 5, // FIXME: use number of CPUs?
@@ -160,14 +179,123 @@ pub async fn init_cache(
         ignore_upstream_cache_filter: false,
     });
 
-    Ok(State {
+    let state = State {
         substituter: flakehub_cache_server.to_owned(),
         push_session,
-    })
+    };
+
+    Ok(state)
 }
 
 pub async fn enqueue_paths(state: &State, store_paths: Vec<StorePath>) -> Result<()> {
     state.push_session.queue_many(store_paths)?;
 
     Ok(())
+}
+
+/// Refresh the GitHub Actions JWT every 2 minutes (slightly less than half of the default validity
+/// period) to ensure pushing / pulling doesn't stop working.
+async fn refresh_github_actions_jwt_worker(
+    netrc_path: std::path::PathBuf,
+    mut github_jwt: String,
+    flakehub_cache_server_clone: String,
+    api: Arc<RwLock<ApiClient>>,
+) -> Result<()> {
+    // TODO(cole-h): this should probably be half of the token's lifetime ((exp - iat) / 2), but
+    // getting this is nontrivial so I'm not going to do it until GitHub changes the lifetime and
+    // breaks this.
+    let next_refresh = std::time::Duration::from_secs(2 * 60);
+
+    // NOTE(cole-h): https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-cloud-providers#requesting-the-jwt-using-environment-variables
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::ACCEPT,
+        HeaderValue::from_static("application/json;api-version=2.0"),
+    );
+    headers.insert(
+        reqwest::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+
+    let github_client = reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .default_headers(headers)
+        .build()?;
+
+    loop {
+        match rewrite_github_actions_token(&github_client, &netrc_path, &github_jwt).await {
+            Ok(new_github_jwt) => {
+                github_jwt = new_github_jwt;
+
+                let server_config = ServerConfig {
+                    endpoint: flakehub_cache_server_clone.clone(),
+                    token: Some(attic_client::config::ServerTokenConfig::Raw {
+                        token: github_jwt.clone(),
+                    }),
+                };
+                let new_api = ApiClient::from_server_config(server_config)?;
+
+                {
+                    let mut api_client = api.write().await;
+                    *api_client = new_api;
+                }
+
+                tracing::debug!(
+                    "Stored new token in netrc and API client, sleeping for {next_refresh:?}"
+                );
+                tokio::time::sleep(next_refresh).await;
+            }
+            Err(e) => {
+                tracing::error!(
+                    ?e,
+                    "Failed to get a new JWT from GitHub, trying again in 10 seconds"
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            }
+        }
+    }
+}
+
+async fn rewrite_github_actions_token(
+    client: &reqwest::Client,
+    netrc_path: &Path,
+    old_github_jwt: &str,
+) -> Result<String> {
+    // NOTE(cole-h): https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-cloud-providers#requesting-the-jwt-using-environment-variables
+    let runtime_token = std::env::var("ACTIONS_ID_TOKEN_REQUEST_TOKEN").map_err(|e| {
+        Error::Internal(format!(
+            "ACTIONS_ID_TOKEN_REQUEST_TOKEN was invalid unicode: {e}"
+        ))
+    })?;
+    let runtime_url = std::env::var("ACTIONS_ID_TOKEN_REQUEST_URL").map_err(|e| {
+        Error::Internal(format!(
+            "ACTIONS_ID_TOKEN_REQUEST_URL was invalid unicode: {e}"
+        ))
+    })?;
+
+    #[derive(serde::Deserialize)]
+    struct TokenResponse {
+        value: String,
+    }
+
+    let res: TokenResponse = client
+        .request(
+            reqwest::Method::GET,
+            format!("{runtime_url}&audience=api.flakehub.com"),
+        )
+        .bearer_auth(runtime_token)
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    let new_github_jwt_string = res.value;
+
+    let netrc_contents = tokio::fs::read_to_string(netrc_path).await?;
+    let new_netrc_contents = netrc_contents.replace(old_github_jwt, &new_github_jwt_string);
+    let netrc_path_new = tempfile::NamedTempFile::new()?;
+    tokio::fs::write(&netrc_path_new, new_netrc_contents).await?;
+    tokio::fs::rename(&netrc_path_new, netrc_path).await?;
+
+    Ok(new_github_jwt_string)
 }
