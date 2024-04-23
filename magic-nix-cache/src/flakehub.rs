@@ -293,9 +293,11 @@ async fn rewrite_github_actions_token(
 
     let netrc_contents = tokio::fs::read_to_string(netrc_path).await?;
     let new_netrc_contents = netrc_contents.replace(old_github_jwt, &new_github_jwt_string);
-    let netrc_path_new = tempfile::NamedTempFile::new()?;
-    tokio::fs::write(&netrc_path_new, new_netrc_contents).await?;
-    tokio::fs::rename(&netrc_path_new, netrc_path).await?;
+    // NOTE(cole-h): create the temporary file right next to the real one so we don't run into
+    // cross-device linking issues when renaming
+    let netrc_path_tmp = netrc_path.with_extension("tmp");
+    tokio::fs::write(&netrc_path_tmp, new_netrc_contents).await?;
+    tokio::fs::rename(&netrc_path_tmp, netrc_path).await?;
 
     Ok(new_github_jwt_string)
 }
