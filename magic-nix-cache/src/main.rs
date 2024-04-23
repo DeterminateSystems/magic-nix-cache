@@ -139,6 +139,8 @@ struct StateInner {
 }
 
 async fn main_cli() -> Result<()> {
+    let _guard = init_logging()?;
+
     let args = Args::parse();
 
     let metrics = Arc::new(telemetry::TelemetryReport::new());
@@ -439,8 +441,6 @@ async fn post_build_hook(out_paths: &str) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let _guard = init_logging()?;
-
     match std::env::var("OUT_PATHS") {
         Ok(out_paths) => post_build_hook(&out_paths).await,
         Err(_) => main_cli().await,
