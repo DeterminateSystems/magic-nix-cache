@@ -49,12 +49,18 @@ async fn workflow_finish(
         sender
             .send(())
             .map_err(|_| Error::Internal("Sending shutdown server message".to_owned()))?;
+    }
 
-        // Wait for the Attic push workers to finish.
-        if let Some(attic_state) = state.flakehub_state.write().await.take() {
-            tracing::info!("Waiting for FlakeHub cache uploads to finish");
-            attic_state.push_session.wait().await?;
-        }
+    if let Some(attic_state) = state.flakehub_state.write().await.take() {
+        tracing::info!("Waiting for FlakeHub cache uploads to finish");
+        let _paths = attic_state.push_session.wait().await?;
+    }
+
+    // NOTE(cole-h): see `init_logging`
+    if let Some(logfile) = &state.logfile {
+        let logfile_contents = std::fs::read_to_string(logfile)?;
+        println!("Every log line throughout the lifetime of the program:");
+        println!("\n{logfile_contents}\n");
     }
 
     let reply = WorkflowFinishResponse {};
@@ -73,6 +79,7 @@ pub struct EnqueuePathsRequest {
 pub struct EnqueuePathsResponse {}
 
 /// Schedule paths in the local Nix store for uploading.
+#[tracing::instrument(skip_all)]
 async fn enqueue_paths(
     Extension(state): Extension<State>,
     Json(req): Json<EnqueuePathsRequest>,

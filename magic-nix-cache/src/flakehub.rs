@@ -1,5 +1,6 @@
 use crate::env::Environment;
 use crate::error::{Error, Result};
+use anyhow::Context;
 use attic::cache::CacheName;
 use attic::nix_store::{NixStore, StorePath};
 use attic_client::push::{PushSession, PushSessionConfig};
@@ -209,6 +210,7 @@ pub async fn enqueue_paths(state: &State, store_paths: Vec<StorePath>) -> Result
 
 /// Refresh the GitHub Actions JWT every 2 minutes (slightly less than half of the default validity
 /// period) to ensure pushing / pulling doesn't stop working.
+#[tracing::instrument(skip_all)]
 async fn refresh_github_actions_jwt_worker(
     netrc_path: std::path::PathBuf,
     mut github_jwt: String,
@@ -219,6 +221,10 @@ async fn refresh_github_actions_jwt_worker(
     // getting this is nontrivial so I'm not going to do it until GitHub changes the lifetime and
     // breaks this.
     let next_refresh = std::time::Duration::from_secs(2 * 60);
+
+    // NOTE(cole-h): we sleep until the next refresh at first because we already got a token from
+    // GitHub recently, don't need to try again until we actually might need to get a new one.
+    tokio::time::sleep(next_refresh).await;
 
     // NOTE(cole-h): https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-cloud-providers#requesting-the-jwt-using-environment-variables
     let mut headers = reqwest::header::HeaderMap::new();
@@ -270,6 +276,7 @@ async fn refresh_github_actions_jwt_worker(
     }
 }
 
+#[tracing::instrument(skip_all)]
 async fn rewrite_github_actions_token(
     client: &reqwest::Client,
     netrc_path: &Path,
@@ -287,29 +294,44 @@ async fn rewrite_github_actions_token(
         ))
     })?;
 
+    let token_request_url = format!("{runtime_url}&audience=api.flakehub.com");
+    let token_response = client
+        .request(reqwest::Method::GET, &token_request_url)
+        .bearer_auth(runtime_token)
+        .send()
+        .await
+        .with_context(|| format!("sending request to {token_request_url}"))?;
+
+    if let Err(e) = token_response.error_for_status_ref() {
+        tracing::error!(?e, "Got error response when requesting token");
+        return Err(e)?;
+    }
+
     #[derive(serde::Deserialize)]
     struct TokenResponse {
         value: String,
     }
 
-    let res: TokenResponse = client
-        .request(
-            reqwest::Method::GET,
-            format!("{runtime_url}&audience=api.flakehub.com"),
-        )
-        .bearer_auth(runtime_token)
-        .send()
-        .await?
+    let token_response: TokenResponse = token_response
         .json()
-        .await?;
+        .await
+        .with_context(|| format!("converting response into json"))?;
 
-    let new_github_jwt_string = res.value;
-
-    let netrc_contents = tokio::fs::read_to_string(netrc_path).await?;
+    let new_github_jwt_string = token_response.value;
+    let netrc_contents = tokio::fs::read_to_string(netrc_path)
+        .await
+        .with_context(|| format!("failed to read {netrc_path:?} to string"))?;
     let new_netrc_contents = netrc_contents.replace(old_github_jwt, &new_github_jwt_string);
-    let netrc_path_new = tempfile::NamedTempFile::new()?;
-    tokio::fs::write(&netrc_path_new, new_netrc_contents).await?;
-    tokio::fs::rename(&netrc_path_new, netrc_path).await?;
+
+    // NOTE(cole-h): create the temporary file right next to the real one so we don't run into
+    // cross-device linking issues when renaming
+    let netrc_path_tmp = netrc_path.with_extension("tmp");
+    tokio::fs::write(&netrc_path_tmp, new_netrc_contents)
+        .await
+        .with_context(|| format!("writing new JWT to {netrc_path_tmp:?}"))?;
+    tokio::fs::rename(&netrc_path_tmp, &netrc_path)
+        .await
+        .with_context(|| format!("renaming {netrc_path_tmp:?} to {netrc_path:?}"))?;
 
     Ok(new_github_jwt_string)
 }

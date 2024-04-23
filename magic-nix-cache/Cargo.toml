@@ -50,6 +50,7 @@ tempfile = "3.9"
 uuid = { version = "1.4.0", features = ["serde", "v7", "rand", "std"] }
 futures = "0.3"
 async-compression = "0.4"
+tracing-appender = "0.2.3"
 
 [dependencies.tokio]
 version = "1.28.0"

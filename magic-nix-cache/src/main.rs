@@ -21,7 +21,7 @@ mod gha;
 mod telemetry;
 
 use std::collections::HashSet;
-use std::fs::{self, create_dir_all, OpenOptions};
+use std::fs::{self, create_dir_all};
 use std::io::Write;
 use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
@@ -38,6 +38,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::sync::{oneshot, Mutex, RwLock};
 use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 use gha_cache::Credentials;
 
@@ -159,10 +161,14 @@ struct StateInner {
 
     /// FlakeHub cache state.
     flakehub_state: RwLock<Option<flakehub::State>>,
+
+    /// Where all of tracing will log to when GitHub Actions is run in debug mode
+    logfile: Option<PathBuf>,
 }
 
 async fn main_cli() -> Result<()> {
-    init_logging();
+    let guard = init_logging()?;
+    let _tracing_guard = guard.appender_guard;
 
     let args = Args::parse();
     let environment = env::Environment::determine();
@@ -175,10 +181,10 @@ async fn main_cli() -> Result<()> {
         create_dir_all(parent).with_context(|| "Creating parent directories of nix.conf")?;
     }
 
-    let mut nix_conf = OpenOptions::new()
+    let mut nix_conf = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(args.nix_conf)
+        .open(&args.nix_conf)
         .with_context(|| "Creating nix.conf")?;
 
     let store = Arc::new(NixStore::connect()?);
@@ -354,6 +360,7 @@ async fn main_cli() -> Result<()> {
         metrics,
         store,
         flakehub_state: RwLock::new(flakehub_state),
+        logfile: guard.logfile,
     });
 
     let app = Router::new()
@@ -485,7 +492,16 @@ async fn main() -> Result<()> {
     }
 }
 
-fn init_logging() {
+pub(crate) fn debug_logfile() -> PathBuf {
+    std::env::temp_dir().join("magic-nix-cache-tracing.log")
+}
+
+pub struct LogGuard {
+    appender_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
+    logfile: Option<PathBuf>,
+}
+
+fn init_logging() -> Result<LogGuard> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         #[cfg(debug_assertions)]
         return EnvFilter::new("info")
@@ -496,11 +512,47 @@ fn init_logging() {
         return EnvFilter::new("info");
     });
 
-    tracing_subscriber::fmt()
+    let stderr_layer = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
-        .pretty()
-        .with_env_filter(filter)
+        .pretty();
+
+    let (guard, file_layer) = match std::env::var("RUNNER_DEBUG") {
+        Ok(val) if val == "1" => {
+            let logfile = debug_logfile();
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&logfile)?;
+            let (nonblocking, guard) = tracing_appender::non_blocking(file);
+            let file_layer = tracing_subscriber::fmt::layer()
+                .with_writer(nonblocking)
+                .pretty();
+
+            (
+                LogGuard {
+                    appender_guard: Some(guard),
+                    logfile: Some(logfile),
+                },
+                Some(file_layer),
+            )
+        }
+        _ => (
+            LogGuard {
+                appender_guard: None,
+                logfile: None,
+            },
+            None,
+        ),
+    };
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(stderr_layer)
+        .with(file_layer)
         .init();
+
+    Ok(guard)
 }
 
 #[cfg(debug_assertions)]
