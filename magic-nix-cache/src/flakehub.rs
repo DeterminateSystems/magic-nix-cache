@@ -1,4 +1,5 @@
 use crate::error::{Error, Result};
+use anyhow::Context;
 use attic::cache::CacheName;
 use attic::nix_store::{NixStore, StorePath};
 use attic_client::push::{PushSession, PushSessionConfig};
@@ -295,9 +296,19 @@ async fn rewrite_github_actions_token(
     let new_netrc_contents = netrc_contents.replace(old_github_jwt, &new_github_jwt_string);
     // NOTE(cole-h): create the temporary file right next to the real one so we don't run into
     // cross-device linking issues when renaming
+    tracing::warn!("{:?}", &netrc_path);
+    tracing::warn!("{:?}", tokio::fs::metadata(&netrc_path).await);
+    tracing::warn!("{:?}", tokio::fs::symlink_metadata(&netrc_path).await);
     let netrc_path_tmp = netrc_path.with_extension("tmp");
-    tokio::fs::write(&netrc_path_tmp, new_netrc_contents).await?;
-    tokio::fs::rename(&netrc_path_tmp, netrc_path).await?;
+    tracing::warn!("{:?}", &netrc_path_tmp);
+    tracing::warn!("{:?}", tokio::fs::metadata(&netrc_path_tmp).await);
+    tracing::warn!("{:?}", tokio::fs::symlink_metadata(&netrc_path_tmp).await);
+    tokio::fs::write(&netrc_path_tmp, new_netrc_contents)
+        .await
+        .with_context(|| format!("writing new JWT to {netrc_path_tmp:?}"))?;
+    tokio::fs::rename(&netrc_path_tmp, &netrc_path)
+        .await
+        .with_context(|| format!("renaming {netrc_path_tmp:?} to {netrc_path:?}"))?;
 
     Ok(new_github_jwt_string)
 }
