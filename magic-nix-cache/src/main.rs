@@ -447,7 +447,7 @@ async fn main() -> Result<()> {
     }
 }
 
-fn init_logging() -> Result<tracing_appender::non_blocking::WorkerGuard> {
+fn init_logging() -> Result<()> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         #[cfg(debug_assertions)]
         return EnvFilter::new("info")
@@ -462,23 +462,12 @@ fn init_logging() -> Result<tracing_appender::non_blocking::WorkerGuard> {
         .with_writer(std::io::stderr)
         .pretty();
 
-    let logfile = std::env::temp_dir().join("magic-nix-cache-tracing.log");
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(logfile)?;
-    let (nonblocking, guard) = tracing_appender::non_blocking(file);
-    let file_layer = tracing_subscriber::fmt::layer()
-        .with_writer(nonblocking)
-        .pretty();
-
     tracing_subscriber::registry()
         .with(filter)
         .with(stderr_layer)
-        .with(file_layer)
         .init();
 
-    Ok(guard)
+    Ok(())
 }
 
 #[cfg(debug_assertions)]

@@ -57,12 +57,6 @@ async fn workflow_finish(
         }
     }
 
-    // NOTE(cole-h): see `init_logging`
-    let logfile = std::env::temp_dir().join("magic-nix-cache-tracing.log");
-    let logfile_contents = std::fs::read_to_string(logfile)?;
-    println!("Every log line throughout the lifetime of the program:");
-    println!("\n{logfile_contents}\n");
-
     let reply = WorkflowFinishResponse {};
 
     //state.metrics.num_new_paths.set(num_new_paths);
