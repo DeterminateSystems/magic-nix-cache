@@ -28,7 +28,3 @@ jobs:
 
       - name: Clippy
         run: nix develop --command cargo clippy
-
-  build:
-    uses: ./.github/workflows/build.yaml
-    secrets: inherit
