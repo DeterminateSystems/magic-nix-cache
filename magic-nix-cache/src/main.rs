@@ -35,6 +35,8 @@ use tempfile::NamedTempFile;
 use tokio::process::Command;
 use tokio::sync::{oneshot, Mutex, RwLock};
 use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 use gha_cache::Credentials;
 
@@ -137,8 +139,6 @@ struct StateInner {
 }
 
 async fn main_cli() -> Result<()> {
-    init_logging();
-
     let args = Args::parse();
 
     let metrics = Arc::new(telemetry::TelemetryReport::new());
@@ -439,13 +439,15 @@ async fn post_build_hook(out_paths: &str) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let _guard = init_logging()?;
+
     match std::env::var("OUT_PATHS") {
         Ok(out_paths) => post_build_hook(&out_paths).await,
         Err(_) => main_cli().await,
     }
 }
 
-fn init_logging() {
+fn init_logging() -> Result<tracing_appender::non_blocking::WorkerGuard> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         #[cfg(debug_assertions)]
         return EnvFilter::new("info")
@@ -456,11 +458,27 @@ fn init_logging() {
         return EnvFilter::new("info");
     });
 
-    tracing_subscriber::fmt()
+    let stderr_layer = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
-        .pretty()
-        .with_env_filter(filter)
+        .pretty();
+
+    let logfile = std::env::temp_dir().join("magic-nix-cache-tracing.log");
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(logfile)?;
+    let (nonblocking, guard) = tracing_appender::non_blocking(file);
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_writer(nonblocking)
+        .pretty();
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(stderr_layer)
+        .with(file_layer)
         .init();
+
+    Ok(guard)
 }
 
 #[cfg(debug_assertions)]
