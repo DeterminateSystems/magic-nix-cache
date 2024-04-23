@@ -407,7 +407,7 @@ async fn post_build_hook(out_paths: &str) -> Result<()> {
     let request = api::EnqueuePathsRequest { store_paths };
 
     let response = reqwest::Client::new()
-        .post(format!("http://{}/api/enqueue-paths", &args.server))
+        .post(format!("http://{}/api/enqueue-pathssss", &args.server))
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .body(
             serde_json::to_string(&request)
