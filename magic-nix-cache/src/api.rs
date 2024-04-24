@@ -45,16 +45,15 @@ async fn workflow_finish(
         gha_cache.shutdown().await?;
     }
 
-    // Wait for the Attic push workers to finish.
-    if let Some(attic_state) = state.flakehub_state.write().await.take() {
-        tracing::info!("Waiting for FlakeHub cache uploads to finish");
-        attic_state.push_session.wait().await?;
-    }
-
     if let Some(sender) = state.shutdown_sender.lock().await.take() {
         sender
             .send(())
             .map_err(|_| Error::Internal("Sending shutdown server message".to_owned()))?;
+    }
+
+    if let Some(attic_state) = state.flakehub_state.write().await.take() {
+        tracing::info!("Waiting for FlakeHub cache uploads to finish");
+        attic_state.push_session.wait().await?;
     }
 
     // NOTE(cole-h): see `init_logging`
