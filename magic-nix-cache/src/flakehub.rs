@@ -274,47 +274,83 @@ async fn rewrite_github_actions_token(
         ))
     })?;
 
+    let token_request_url = format!("{runtime_url}&audience=api.flakehub.com");
+    let token_response = client
+        .request(reqwest::Method::GET, &token_request_url)
+        .bearer_auth(runtime_token)
+        .send()
+        .await
+        .with_context(|| format!("sending request to {token_request_url}"))?;
+
+    if let Err(e) = token_response.error_for_status_ref() {
+        tracing::error!(?e, "Got error response when requesting token");
+    }
+
     #[derive(serde::Deserialize)]
     struct TokenResponse {
         value: String,
     }
 
-    let res: TokenResponse = client
-        .request(
-            reqwest::Method::GET,
-            format!("{runtime_url}&audience=api.flakehub.com"),
-        )
-        .bearer_auth(runtime_token)
-        .send()
-        .await?
+    let token_response: TokenResponse = token_response
         .json()
-        .await?;
+        .await
+        .with_context(|| format!("converting response into json"))?;
 
-    let new_github_jwt_string = res.value;
+    let new_github_jwt_string = token_response.value;
 
-    let netrc_contents = tokio::fs::read_to_string(netrc_path).await?;
+    tracing::warn!("netrc_path: {:?}", &netrc_path);
+    tracing::warn!(
+        "metadata(netrc_path): {:?}",
+        tokio::fs::metadata(&netrc_path).await
+    );
+    tracing::warn!(
+        "symlink_metadata(netrc_path): {:?}",
+        tokio::fs::symlink_metadata(&netrc_path).await
+    );
+    let netrc_contents = tokio::fs::read_to_string(netrc_path)
+        .await
+        .with_context(|| format!("failed to read {netrc_path:?} to string"))?;
+    tracing::warn!("netrc_path: {:?}", &netrc_path);
+    tracing::warn!(
+        "metadata(netrc_path): {:?}",
+        tokio::fs::metadata(&netrc_path).await
+    );
+    tracing::warn!(
+        "symlink_metadata(netrc_path): {:?}",
+        tokio::fs::symlink_metadata(&netrc_path).await
+    );
     let new_netrc_contents = netrc_contents.replace(old_github_jwt, &new_github_jwt_string);
     // NOTE(cole-h): create the temporary file right next to the real one so we don't run into
     // cross-device linking issues when renaming
-    tracing::warn!("{:?}", &netrc_path);
-    tracing::warn!("{:?}", tokio::fs::metadata(&netrc_path).await);
-    tracing::warn!("{:?}", tokio::fs::symlink_metadata(&netrc_path).await);
     let netrc_path_tmp = netrc_path.with_extension("tmp");
-    tracing::warn!("{:?}", &netrc_path_tmp);
-    tracing::warn!("{:?}", tokio::fs::metadata(&netrc_path_tmp).await);
-    tracing::warn!("{:?}", tokio::fs::symlink_metadata(&netrc_path_tmp).await);
     tokio::fs::write(&netrc_path_tmp, new_netrc_contents)
         .await
         .with_context(|| format!("writing new JWT to {netrc_path_tmp:?}"))?;
-    tracing::warn!("{:?}", &netrc_path_tmp);
-    tracing::warn!("{:?}", tokio::fs::metadata(&netrc_path_tmp).await);
-    tracing::warn!("{:?}", tokio::fs::symlink_metadata(&netrc_path_tmp).await);
+    tracing::warn!("netrc_path_tmp: {:?}", &netrc_path_tmp);
+    tracing::warn!(
+        "metadata(netrc_path_tmp): {:?}",
+        tokio::fs::metadata(&netrc_path_tmp).await
+    );
+    tracing::warn!(
+        "symlink_metadata(netrc_path_tmp): {:?}",
+        tokio::fs::symlink_metadata(&netrc_path_tmp).await
+    );
     tokio::fs::rename(&netrc_path_tmp, &netrc_path)
         .await
         .with_context(|| format!("renaming {netrc_path_tmp:?} to {netrc_path:?}"))?;
-    tracing::warn!("{:?}", &netrc_path_tmp);
-    tracing::warn!("{:?}", tokio::fs::metadata(&netrc_path_tmp).await);
-    tracing::warn!("{:?}", tokio::fs::symlink_metadata(&netrc_path_tmp).await);
+    tracing::warn!("netrc_path_tmp: {:?}", &netrc_path_tmp);
+    tracing::warn!(
+        "metadata(netrc_path_tmp): {:?}",
+        tokio::fs::metadata(&netrc_path_tmp).await
+    );
+    tracing::warn!(
+        "symlink_metadata(netrc_path_tmp): {:?}",
+        tokio::fs::symlink_metadata(&netrc_path_tmp).await
+    );
+
+    tracing::warn!("(separator)");
+    tracing::warn!("(separator)");
+    tracing::warn!("(separator)");
 
     Ok(new_github_jwt_string)
 }
