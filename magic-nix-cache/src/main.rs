@@ -149,10 +149,10 @@ async fn main_cli() -> Result<()> {
         create_dir_all(parent).with_context(|| "Creating parent directories of nix.conf")?;
     }
 
-    let mut nix_conf = OpenOptions::new()
+    let mut nix_conf = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(args.nix_conf)
+        .open(&args.nix_conf)
         .with_context(|| "Creating nix.conf")?;
 
     let store = Arc::new(NixStore::connect()?);
