@@ -53,7 +53,8 @@ async fn workflow_finish(
 
     if let Some(attic_state) = state.flakehub_state.write().await.take() {
         tracing::info!("Waiting for FlakeHub cache uploads to finish");
-        attic_state.push_session.wait().await?;
+        let paths = attic_state.push_session.wait().await?;
+        tracing::warn!(?paths, "pushed these paths");
     }
 
     // NOTE(cole-h): see `init_logging`
@@ -78,6 +79,7 @@ pub struct EnqueuePathsRequest {
 pub struct EnqueuePathsResponse {}
 
 /// Schedule paths in the local Nix store for uploading.
+#[tracing::instrument(skip_all)]
 async fn enqueue_paths(
     Extension(state): Extension<State>,
     Json(req): Json<EnqueuePathsRequest>,
@@ -97,6 +99,7 @@ async fn enqueue_paths(
     }
 
     if let Some(flakehub_state) = &*state.flakehub_state.read().await {
+        tracing::warn!("enqueuing {:?} for flakehub", store_paths);
         crate::flakehub::enqueue_paths(flakehub_state, store_paths).await?;
     }
 

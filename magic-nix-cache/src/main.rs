@@ -20,7 +20,7 @@ mod gha;
 mod telemetry;
 
 use std::collections::HashSet;
-use std::fs::{self, create_dir_all, OpenOptions};
+use std::fs::{self, create_dir_all};
 use std::io::Write;
 use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
@@ -465,7 +465,8 @@ fn init_logging() -> Result<tracing_appender::non_blocking::WorkerGuard> {
     let logfile = std::env::temp_dir().join("magic-nix-cache-tracing.log");
     let file = std::fs::OpenOptions::new()
         .create(true)
-        .append(true)
+        .write(true)
+        .truncate(true)
         .open(logfile)?;
     let (nonblocking, guard) = tracing_appender::non_blocking(file);
     let file_layer = tracing_subscriber::fmt::layer()
