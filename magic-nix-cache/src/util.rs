@@ -30,13 +30,8 @@ pub async fn get_store_paths(store: &NixStore) -> Result<HashSet<PathBuf>> {
         }
 
         if let Some(s) = file_name.to_str() {
-            // Let's not push any sources
-            if s.ends_with("-source") {
-                continue;
-            }
-
             // Special paths (so far only `.links`)
-            if s.starts_with(".links") {
+            if s == ".links" {
                 continue;
             }
         }
