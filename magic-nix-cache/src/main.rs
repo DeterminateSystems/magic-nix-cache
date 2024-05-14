@@ -19,6 +19,7 @@ mod error;
 mod flakehub;
 mod gha;
 mod telemetry;
+mod util;
 
 use std::collections::HashSet;
 use std::fs::{self, create_dir_all};
@@ -164,6 +165,9 @@ struct StateInner {
 
     /// Where all of tracing will log to when GitHub Actions is run in debug mode
     logfile: Option<PathBuf>,
+
+    /// The paths in the Nix store when Magic Nix Cache started.
+    original_paths: Mutex<HashSet<PathBuf>>,
 }
 
 async fn main_cli() -> Result<()> {
@@ -361,6 +365,7 @@ async fn main_cli() -> Result<()> {
         store,
         flakehub_state: RwLock::new(flakehub_state),
         logfile: guard.logfile,
+        original_paths: Mutex::new(HashSet::new()),
     });
 
     let app = Router::new()
