@@ -31,7 +31,7 @@ pub async fn init_cache(
     flakehub_api_server: &Url,
     flakehub_api_server_netrc: &Path,
     flakehub_cache_server: &Url,
-    flakehub_flake_name: &str,
+    flakehub_flake_name: Option<String>,
     store: Arc<NixStore>,
 ) -> Result<State> {
     // Parse netrc to get the credentials for api.flakehub.com.
@@ -122,9 +122,17 @@ pub async fn init_cache(
 
     // Get the cache UUID for this project.
     let cache_name = {
-        let url = flakehub_api_server
-            .join(&format!("project/{}", flakehub_flake_name))
+        let mut url = flakehub_api_server
+            .join("project")
             .map_err(|_| Error::Config(format!("bad URL '{}'", flakehub_api_server)))?;
+
+        if let Some(flakehub_flake_name) = flakehub_flake_name {
+            if !flakehub_flake_name.is_empty() {
+                url = flakehub_api_server
+                    .join(&format!("project/{}", flakehub_flake_name))
+                    .map_err(|_| Error::Config(format!("bad URL '{}'", flakehub_api_server)))?;
+            }
+        }
 
         let response = reqwest::Client::new()
             .get(url.to_owned())
