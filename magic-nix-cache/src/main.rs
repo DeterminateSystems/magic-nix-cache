@@ -18,6 +18,7 @@ mod error;
 mod flakehub;
 mod gha;
 mod telemetry;
+mod util;
 
 use std::collections::HashSet;
 use std::fs::{self, create_dir_all};
@@ -136,6 +137,9 @@ struct StateInner {
 
     /// FlakeHub cache state.
     flakehub_state: RwLock<Option<flakehub::State>>,
+
+    /// The paths in the Nix store when Magic Nix Cache started.
+    original_paths: Mutex<HashSet<PathBuf>>,
 }
 
 async fn main_cli() -> Result<()> {
@@ -324,6 +328,7 @@ async fn main_cli() -> Result<()> {
         metrics,
         store,
         flakehub_state: RwLock::new(flakehub_state),
+        original_paths: Mutex::new(HashSet::new()),
     });
 
     let app = Router::new()
