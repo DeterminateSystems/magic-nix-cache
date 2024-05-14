@@ -33,6 +33,7 @@ uuid = { version = "1.4.0", features = ["serde", "v7", "rand", "std"] }
 futures = "0.3"
 async-compression = "0.4"
 tracing-appender = "0.2.3"
+rusqlite = { version = "0.30", features = ["bundled"] }
 
 [dependencies.tokio]
 version = "1.28.0"
