@@ -120,6 +120,10 @@ struct Args {
     /// File to write to when indicating startup.
     #[arg(long)]
     startup_notification_file: Option<PathBuf>,
+
+    /// Whether or not to diff the store before and after Magic Nix Cache runs
+    #[arg(long, default_value_t = false)]
+    diff_store: bool,
 }
 
 impl Args {
@@ -166,8 +170,8 @@ struct StateInner {
     /// Where all of tracing will log to when GitHub Actions is run in debug mode
     logfile: Option<PathBuf>,
 
-    /// The paths in the Nix store when Magic Nix Cache started.
-    original_paths: Mutex<HashSet<PathBuf>>,
+    /// The paths in the Nix store when Magic Nix Cache started, if store diffing is enabled.
+    original_paths: Option<Mutex<HashSet<PathBuf>>>,
 }
 
 async fn main_cli() -> Result<()> {
@@ -356,6 +360,7 @@ async fn main_cli() -> Result<()> {
 
     let (shutdown_sender, shutdown_receiver) = oneshot::channel();
 
+    let original_paths = args.diff_store.then_some(Mutex::new(HashSet::new()));
     let state = Arc::new(StateInner {
         gha_cache,
         upstream: args.upstream.clone(),
@@ -365,7 +370,7 @@ async fn main_cli() -> Result<()> {
         store,
         flakehub_state: RwLock::new(flakehub_state),
         logfile: guard.logfile,
-        original_paths: Mutex::new(HashSet::new()),
+        original_paths,
     });
 
     let app = Router::new()

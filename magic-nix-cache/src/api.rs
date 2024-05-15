@@ -12,14 +12,14 @@ use crate::error::{Error, Result};
 
 #[derive(Debug, Clone, Serialize)]
 struct WorkflowStartResponse {
-    num_original_paths: usize,
+    num_original_paths: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 struct WorkflowFinishResponse {
-    num_original_paths: usize,
-    num_final_paths: usize,
-    num_new_paths: usize,
+    num_original_paths: Option<usize>,
+    num_final_paths: Option<usize>,
+    num_new_paths: Option<usize>,
 }
 
 pub fn get_router() -> Router {
@@ -33,17 +33,22 @@ pub fn get_router() -> Router {
 #[debug_handler]
 async fn workflow_start(Extension(state): Extension<State>) -> Result<Json<WorkflowStartResponse>> {
     tracing::info!("Workflow started");
-    let mut original_paths = state.original_paths.lock().await;
-    *original_paths = crate::util::get_store_paths(&state.store).await?;
+    let reply = if let Some(original_paths) = &state.original_paths {
+        let mut original_paths = original_paths.lock().await;
+        *original_paths = crate::util::get_store_paths(&state.store).await?;
 
-    let reply = WorkflowStartResponse {
-        num_original_paths: original_paths.len(),
+        let reply = WorkflowStartResponse {
+            num_original_paths: Some(original_paths.len()),
+        };
+
+        state.metrics.num_original_paths.set(original_paths.len());
+
+        reply
+    } else {
+        WorkflowStartResponse {
+            num_original_paths: None,
+        }
     };
-
-    state
-        .metrics
-        .num_original_paths
-        .set(reply.num_original_paths);
 
     Ok(Json(reply))
 }
@@ -54,22 +59,42 @@ async fn workflow_finish(
 ) -> Result<Json<WorkflowFinishResponse>> {
     tracing::info!("Workflow finished");
 
-    let original_paths = state.original_paths.lock().await;
-    let final_paths = crate::util::get_store_paths(&state.store).await?;
-    let new_paths = final_paths
-        .difference(&original_paths)
-        .cloned()
-        .map(|path| state.store.follow_store_path(path).map_err(Error::Attic))
-        .collect::<Result<Vec<_>>>()?;
+    let response = if let Some(original_paths) = &state.original_paths {
+        let original_paths = original_paths.lock().await;
+        let final_paths = crate::util::get_store_paths(&state.store).await?;
+        let new_paths = final_paths
+            .difference(&original_paths)
+            .cloned()
+            .map(|path| state.store.follow_store_path(path).map_err(Error::Attic))
+            .collect::<Result<Vec<_>>>()?;
 
-    let num_original_paths = original_paths.len();
-    let num_final_paths = final_paths.len();
-    let num_new_paths = new_paths.len();
+        let num_original_paths = original_paths.len();
+        let num_final_paths = final_paths.len();
+        let num_new_paths = new_paths.len();
 
-    // NOTE(cole-h): If we're substituting from an upstream cache, those paths won't have the
-    // post-build-hook run on it, so we diff the store to ensure we cache everything we can.
-    tracing::info!("Diffing the store and uploading any new paths before we shut down");
-    enqueue_paths(&state, new_paths).await?;
+        let reply = WorkflowFinishResponse {
+            num_original_paths: Some(num_original_paths),
+            num_final_paths: Some(num_final_paths),
+            num_new_paths: Some(num_new_paths),
+        };
+
+        state.metrics.num_original_paths.set(num_original_paths);
+        state.metrics.num_final_paths.set(num_final_paths);
+        state.metrics.num_new_paths.set(num_new_paths);
+
+        // NOTE(cole-h): If we're substituting from an upstream cache, those paths won't have the
+        // post-build-hook run on it, so we diff the store to ensure we cache everything we can.
+        tracing::info!("Diffing the store and uploading any new paths before we shut down");
+        enqueue_paths(&state, new_paths).await?;
+
+        reply
+    } else {
+        WorkflowFinishResponse {
+            num_original_paths: None,
+            num_final_paths: None,
+            num_new_paths: None,
+        }
+    };
 
     if let Some(gha_cache) = &state.gha_cache {
         tracing::info!("Waiting for GitHub action cache uploads to finish");
@@ -94,20 +119,7 @@ async fn workflow_finish(
         println!("\n{logfile_contents}\n");
     }
 
-    let reply = WorkflowFinishResponse {
-        num_original_paths,
-        num_final_paths,
-        num_new_paths,
-    };
-
-    state
-        .metrics
-        .num_original_paths
-        .set(reply.num_original_paths);
-    state.metrics.num_final_paths.set(reply.num_final_paths);
-    state.metrics.num_new_paths.set(reply.num_new_paths);
-
-    Ok(Json(reply))
+    Ok(Json(response))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
