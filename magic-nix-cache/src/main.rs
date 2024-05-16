@@ -14,6 +14,7 @@
 
 mod api;
 mod binary_cache;
+mod env;
 mod error;
 mod flakehub;
 mod gha;
@@ -112,6 +113,24 @@ struct Args {
     startup_notification_url: Option<reqwest::Url>,
 }
 
+impl Args {
+    fn validate(&self, environment: env::Environment) -> Result<(), error::Error> {
+        if environment.is_gitlab_ci() && self.use_gha_cache {
+            return Err(error::Error::Config(String::from(
+                "the --use-gha-cache flag should not be applied in GitLab CI",
+            )));
+        }
+
+        if environment.is_gitlab_ci() && !self.use_flakehub {
+            return Err(error::Error::Config(String::from(
+                "you must set --use-flakehub in GitLab CI",
+            )));
+        }
+
+        Ok(())
+    }
+}
+
 /// The global server state.
 struct StateInner {
     /// State for uploading to the GHA cache.
@@ -140,6 +159,9 @@ async fn main_cli() -> Result<()> {
     init_logging();
 
     let args = Args::parse();
+    let environment = env::Environment::determine();
+    tracing::debug!("Running in {}", environment.to_string());
+    args.validate(environment)?;
 
     let metrics = Arc::new(telemetry::TelemetryReport::new());
 
@@ -167,6 +189,7 @@ async fn main_cli() -> Result<()> {
         let flakehub_flake_name = args.flakehub_flake_name;
 
         match flakehub::init_cache(
+            environment,
             &args
                 .flakehub_api_server
                 .ok_or_else(|| anyhow!("--flakehub-api-server is required"))?,
@@ -240,7 +263,10 @@ async fn main_cli() -> Result<()> {
         tracing::info!("Native GitHub Action cache is enabled.");
         Some(gha_cache)
     } else {
-        tracing::info!("Native GitHub Action cache is disabled.");
+        if environment.is_github_actions() {
+            tracing::info!("Native GitHub Action cache is disabled.");
+        }
+
         None
     };
 

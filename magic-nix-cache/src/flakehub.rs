@@ -1,3 +1,4 @@
+use crate::env::Environment;
 use crate::error::{Error, Result};
 use attic::cache::CacheName;
 use attic::nix_store::{NixStore, StorePath};
@@ -27,6 +28,7 @@ pub struct State {
 }
 
 pub async fn init_cache(
+    environment: Environment,
     flakehub_api_server: &Url,
     flakehub_api_server_netrc: &Path,
     flakehub_cache_server: &Url,
@@ -102,22 +104,26 @@ pub async fn init_cache(
     let api_inner = ApiClient::from_server_config(server_config)?;
     let api = Arc::new(RwLock::new(api_inner));
 
-    // NOTE(cole-h): This is a workaround -- at the time of writing, GitHub Actions JWTs are only
-    // valid for 5 minutes after being issued. FlakeHub uses these JWTs for authentication, which
-    // means that after those 5 minutes have passed and the token is expired, FlakeHub (and by
-    // extension FlakeHub Cache) will no longer allow requests using this token. However, GitHub
-    // gives us a way to repeatedly request new tokens, so we utilize that and refresh the token
-    // every 2 minutes (less than half of the lifetime of the token).
-    let netrc_path_clone = flakehub_api_server_netrc.to_path_buf();
-    let initial_github_jwt_clone = flakehub_password.clone();
-    let flakehub_cache_server_clone = flakehub_cache_server.to_string();
-    let api_clone = api.clone();
-    tokio::task::spawn(refresh_github_actions_jwt_worker(
-        netrc_path_clone,
-        initial_github_jwt_clone,
-        flakehub_cache_server_clone,
-        api_clone,
-    ));
+    // Periodically refresh JWT in GitHub Actions environment
+    if environment.is_github_actions() {
+        // NOTE(cole-h): This is a workaround -- at the time of writing, GitHub Actions JWTs are only
+        // valid for 5 minutes after being issued. FlakeHub uses these JWTs for authentication, which
+        // means that after those 5 minutes have passed and the token is expired, FlakeHub (and by
+        // extension FlakeHub Cache) will no longer allow requests using this token. However, GitHub
+        // gives us a way to repeatedly request new tokens, so we utilize that and refresh the token
+        // every 2 minutes (less than half of the lifetime of the token).
+        let netrc_path_clone = flakehub_api_server_netrc.to_path_buf();
+        let initial_github_jwt_clone = flakehub_password.clone();
+        let flakehub_cache_server_clone = flakehub_cache_server.to_string();
+        let api_clone = api.clone();
+
+        tokio::task::spawn(refresh_github_actions_jwt_worker(
+            netrc_path_clone,
+            initial_github_jwt_clone,
+            flakehub_cache_server_clone,
+            api_clone,
+        ));
+    }
 
     // Get the cache UUID for this project.
     let cache_name = {
