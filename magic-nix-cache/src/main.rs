@@ -161,7 +161,7 @@ async fn main_cli() -> Result<()> {
     let args = Args::parse();
     let environment = env::Environment::determine();
     tracing::debug!("Running in {}", environment.to_string());
-    args.validate(environment.clone())?;
+    args.validate(environment)?;
 
     let metrics = Arc::new(telemetry::TelemetryReport::new());
 

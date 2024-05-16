@@ -1,6 +1,6 @@
 use std::fmt::{self, Display};
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum Environment {
     GitHubActions,
     GitLabCI,
