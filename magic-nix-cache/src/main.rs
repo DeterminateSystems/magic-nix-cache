@@ -32,9 +32,11 @@ use ::attic::nix_store::NixStore;
 use anyhow::{anyhow, Context, Result};
 use axum::{extract::Extension, routing::get, Router};
 use clap::Parser;
+use env::Environment;
 use tempfile::NamedTempFile;
 use tokio::process::Command;
 use tokio::sync::{oneshot, Mutex, RwLock};
+use tracing_subscriber::field::debug;
 use tracing_subscriber::filter::EnvFilter;
 
 use gha_cache::Credentials;
@@ -115,6 +117,18 @@ struct Args {
     startup_notification_url: Option<reqwest::Url>,
 }
 
+impl Args {
+    fn validate(&self, environment: Environment) -> Result<(), error::Error> {
+        if environment.is_gitlab_ci() && self.use_gha_cache {
+            return Err(Error::Config(String::from(
+                "the --use-gha-cache flag should not be applied in GitLab CI",
+            )));
+        }
+
+        Ok(())
+    }
+}
+
 /// The global server state.
 struct StateInner {
     /// State for uploading to the GHA cache.
@@ -143,8 +157,9 @@ async fn main_cli() -> Result<()> {
     init_logging();
 
     let args = Args::parse();
-
-    let _environment = determine_environment();
+    let environment = determine_environment();
+    tracing::debug!("Running in {environment}");
+    args.validate(environment)?;
 
     let metrics = Arc::new(telemetry::TelemetryReport::new());
 

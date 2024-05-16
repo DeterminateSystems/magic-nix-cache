@@ -7,6 +7,16 @@ pub enum Environment {
     Other,
 }
 
+impl Environment {
+    pub fn is_github_actions(&self) -> bool {
+        matches!(self, Self::GitHubActions)
+    }
+
+    pub fn is_gitlab_ci(&self) -> bool {
+        matches!(self, Self::GitLabCI)
+    }
+}
+
 impl ToString for Environment {
     fn to_string(&self) -> String {
         use Environment::*;
@@ -14,7 +24,7 @@ impl ToString for Environment {
         String::from(match self {
             GitHubActions => "GitHub Actions",
             GitLabCI => "GitLab CI",
-            _ => "unspecified",
+            _ => "an unspecified environment",
         })
     }
 }
