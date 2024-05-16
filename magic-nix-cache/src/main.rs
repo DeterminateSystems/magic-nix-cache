@@ -33,10 +33,10 @@ use anyhow::{anyhow, Context, Result};
 use axum::{extract::Extension, routing::get, Router};
 use clap::Parser;
 use env::Environment;
+use error::Error;
 use tempfile::NamedTempFile;
 use tokio::process::Command;
 use tokio::sync::{oneshot, Mutex, RwLock};
-use tracing_subscriber::field::debug;
 use tracing_subscriber::filter::EnvFilter;
 
 use gha_cache::Credentials;
@@ -125,6 +125,12 @@ impl Args {
             )));
         }
 
+        if environment.is_gitlab_ci() && !self.use_flakehub {
+            return Err(Error::Config(String::from(
+                "you must set --use-flakehub in GitLab CI",
+            )));
+        }
+
         Ok(())
     }
 }
@@ -158,8 +164,8 @@ async fn main_cli() -> Result<()> {
 
     let args = Args::parse();
     let environment = determine_environment();
-    tracing::debug!("Running in {environment}");
-    args.validate(environment)?;
+    tracing::debug!("Running in {}", environment.to_string());
+    args.validate(environment.clone())?;
 
     let metrics = Arc::new(telemetry::TelemetryReport::new());
 
@@ -187,6 +193,7 @@ async fn main_cli() -> Result<()> {
         let flakehub_flake_name = args.flakehub_flake_name;
 
         match flakehub::init_cache(
+            environment,
             &args
                 .flakehub_api_server
                 .ok_or_else(|| anyhow!("--flakehub-api-server is required"))?,

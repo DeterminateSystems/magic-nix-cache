@@ -19,9 +19,6 @@ pub enum Error {
     #[error("Bad Request")]
     BadRequest,
 
-    #[error("Current environment couldn't be determinate")]
-    UnknownEnv,
-
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
