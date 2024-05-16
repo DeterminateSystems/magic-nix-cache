@@ -14,6 +14,7 @@
 
 mod api;
 mod binary_cache;
+mod env;
 mod error;
 mod flakehub;
 mod gha;
@@ -37,6 +38,8 @@ use tokio::sync::{oneshot, Mutex, RwLock};
 use tracing_subscriber::filter::EnvFilter;
 
 use gha_cache::Credentials;
+
+use crate::env::determine_environment;
 
 type State = Arc<StateInner>;
 
@@ -140,6 +143,8 @@ async fn main_cli() -> Result<()> {
     init_logging();
 
     let args = Args::parse();
+
+    let _environment = determine_environment();
 
     let metrics = Arc::new(telemetry::TelemetryReport::new());
 
