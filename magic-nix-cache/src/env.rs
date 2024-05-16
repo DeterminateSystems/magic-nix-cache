@@ -13,7 +13,7 @@ impl Environment {
             return Environment::GitHubActions;
         }
 
-        if env_var_is_true("CI") && env_var_is_true("GITLAB_CI") {
+        if env_var_is_true("GITLAB_CI") {
             return Environment::GitLabCI;
         }
 
