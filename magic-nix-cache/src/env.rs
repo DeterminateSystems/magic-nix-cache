@@ -46,5 +46,5 @@ impl Display for Environment {
 }
 
 fn env_var_is_true(e: &str) -> bool {
-    &env::var(e).unwrap_or(String::from("")) == "true"
+    std::env::var(e).is_ok_and(|v| v == "true")
 }
