@@ -1,7 +1,4 @@
-use std::{
-    env,
-    fmt::{self, Display},
-};
+use std::fmt::{self, Display};
 
 #[derive(Clone)]
 pub enum Environment {
