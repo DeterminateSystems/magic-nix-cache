@@ -11,6 +11,18 @@ pub enum Environment {
 }
 
 impl Environment {
+    pub fn determine() -> Self {
+        if env_var_is_true("GITHUB_ACTIONS") {
+            return Environment::GitHubActions;
+        }
+
+        if env_var_is_true("CI") && env_var_is_true("GITLAB_CI") {
+            return Environment::GitLabCI;
+        }
+
+        Environment::Other
+    }
+
     pub fn is_github_actions(&self) -> bool {
         matches!(self, Self::GitHubActions)
     }
@@ -34,18 +46,6 @@ impl Display for Environment {
             }
         )
     }
-}
-
-pub fn determine_environment() -> Environment {
-    if env_var_is_true("GITHUB_ACTIONS") {
-        return Environment::GitHubActions;
-    }
-
-    if env_var_is_true("CI") && env_var_is_true("GITLAB_CI") {
-        return Environment::GitLabCI;
-    }
-
-    Environment::Other
 }
 
 fn env_var_is_true(e: &str) -> bool {

@@ -32,16 +32,12 @@ use ::attic::nix_store::NixStore;
 use anyhow::{anyhow, Context, Result};
 use axum::{extract::Extension, routing::get, Router};
 use clap::Parser;
-use env::Environment;
-use error::Error;
 use tempfile::NamedTempFile;
 use tokio::process::Command;
 use tokio::sync::{oneshot, Mutex, RwLock};
 use tracing_subscriber::filter::EnvFilter;
 
 use gha_cache::Credentials;
-
-use crate::env::determine_environment;
 
 type State = Arc<StateInner>;
 
@@ -118,15 +114,15 @@ struct Args {
 }
 
 impl Args {
-    fn validate(&self, environment: Environment) -> Result<(), error::Error> {
+    fn validate(&self, environment: env::Environment) -> Result<(), error::Error> {
         if environment.is_gitlab_ci() && self.use_gha_cache {
-            return Err(Error::Config(String::from(
+            return Err(error::Error::Config(String::from(
                 "the --use-gha-cache flag should not be applied in GitLab CI",
             )));
         }
 
         if environment.is_gitlab_ci() && !self.use_flakehub {
-            return Err(Error::Config(String::from(
+            return Err(error::Error::Config(String::from(
                 "you must set --use-flakehub in GitLab CI",
             )));
         }
@@ -163,7 +159,7 @@ async fn main_cli() -> Result<()> {
     init_logging();
 
     let args = Args::parse();
-    let environment = determine_environment();
+    let environment = env::Environment::determine();
     tracing::debug!("Running in {}", environment.to_string());
     args.validate(environment.clone())?;
 
