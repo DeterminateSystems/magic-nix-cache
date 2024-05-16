@@ -263,7 +263,6 @@ async fn main_cli() -> Result<()> {
         tracing::info!("Native GitHub Action cache is enabled.");
         Some(gha_cache)
     } else {
-        tracing::info!("Native GitHub Action cache is disabled.");
         None
     };
 
