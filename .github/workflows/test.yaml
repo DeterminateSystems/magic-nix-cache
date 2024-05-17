@@ -45,6 +45,15 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
 
+      - name: Extract
+        id: extract
+        run: |
+          OUTPUT=$(cat magic-nix-cache.closure.xz | xz -d | nix-store --import)
+          MNC_BIN_PATH=$(echo "${OUTPUT}" | tail -n 1)
+          MAGIC_NIX_CACHE="${MNC_BIN_PATH}/bin/magic-nix-cache"
+
+          echo "mnc-path=${MAGIC_NIX_CACHE}" >> "$GITHUB_OUTPUT"
+
       - uses: DeterminateSystems/magic-nix-cache-action@main
         with:
-          source-binary: "magic-nix-cache.closure.xz"
+          source-binary: "${{ steps.extract.outputs.mnc-path }}"
