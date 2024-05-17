@@ -382,16 +382,6 @@ async fn main_cli() -> Result<()> {
     tokio::spawn(async move {
         if let Err(e) = server.await {
             tracing::error!("failed to start up daemon: {e}");
-
-            // Delete the notification file if it was created
-            if let Some(startup_notification_file_path) = args.startup_notification_file_path {
-                if File::metadata(startup_notification_file_path).await.is_ok() {
-                    if let Err(e) = tokio::fs::remove_file(startup_notification_file_path).await {
-                        tracing::error!("failed to remove stray startup notification file at {startup_notification_file_path:?}; you may need to delete it manually");
-                    }
-                }
-            }
-
             exit(1);
         }
     });
