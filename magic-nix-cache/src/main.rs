@@ -133,6 +133,12 @@ impl Args {
             )));
         }
 
+        if self.startup_notification_url.is_none() && self.startup_notification_file.is_none() {
+            return Err(error::Error::Config(String::from(
+                "you must specify either --startup-notification-url or --startup-notification-file",
+            )));
+        }
+
         Ok(())
     }
 }
@@ -399,14 +405,12 @@ async fn main_cli() -> Result<()> {
         }
     }
 
-    // Notify of startup by writing "1" to the specified file
+    // Notify of startup via file
     if let Some(startup_notification_file_path) = args.startup_notification_file {
-        let file_contents: &[u8] = b"1";
-
         tracing::debug!("Startup notification via file at {startup_notification_file_path:?}");
 
         let mut notification_file = File::create(&startup_notification_file_path).await?;
-        notification_file.write_all(file_contents).await?;
+        notification_file.write_all(b"1").await?;
 
         tracing::debug!("Created startup notification file at {startup_notification_file_path:?}");
     }
