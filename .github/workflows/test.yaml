@@ -28,7 +28,7 @@ jobs:
           path: magic-nix-cache.closure.xz
           key: magic-nix-cache-${{ github.sha }}
 
-  test-linux:
+  test-magic-nix-cache-action:
     needs: build-linux
     runs-on: ubuntu-22.04
     permissions:
@@ -41,6 +41,9 @@ jobs:
           path: magic-nix-cache.closure.xz
           key: magic-nix-cache-${{ github.sha }}
           fail-on-cache-miss: true
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
 
       - uses: DeterminateSystems/magic-nix-cache-action@main
         with:
