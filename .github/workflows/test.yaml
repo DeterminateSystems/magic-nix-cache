@@ -1,0 +1,36 @@
+name: Integration tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      FLAKEHUB_API_ENDPOINT: "api.flakehub.com"
+      FLAKEHUB_WEB_ENDPOINT: "https://flakehub.com"
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Get JWT
+        id: jwt
+        run: |
+          REQUEST_TOKEN="${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"
+          ROOT_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}"
+          JWT_ID_TOKEN=$(curl \
+            --header "authorization: bearer ${REQUEST_TOKEN}" \
+            --header "accept: application/json;api-version=2.0" \
+            --header "content-type: application/json" \
+            --header "user-agent: magic-nix-cache" \
+            "${ROOT_URL}&audience=${{ env.FLAKEHUB_API_ENDPOINT }}")
+
+          echo "::set-output name=token::${JWT_ID_TOKEN}"
+
+      - name: Display token
+        run: |
+          echo "${{ steps.jwt.outputs.token }}"
