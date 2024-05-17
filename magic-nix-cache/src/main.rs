@@ -26,6 +26,7 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::process::exit;
 use std::sync::Arc;
 
 use ::attic::nix_store::NixStore;
@@ -416,8 +417,7 @@ async fn main_cli() -> Result<()> {
         .with_graceful_shutdown(async move {
             shutdown_receiver.await.ok();
             tracing::info!("Shutting down");
-        })
-        .await;
+        })?;
 
     // Notify diagnostics endpoint
     if let Some(diagnostic_endpoint) = diagnostic_endpoint {
