@@ -26,6 +26,7 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::process::exit;
 use std::sync::Arc;
 
 use ::attic::nix_store::NixStore;
@@ -33,6 +34,8 @@ use anyhow::{anyhow, Context, Result};
 use axum::{extract::Extension, routing::get, Router};
 use clap::Parser;
 use tempfile::NamedTempFile;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::sync::{oneshot, Mutex, RwLock};
 use tracing_subscriber::filter::EnvFilter;
@@ -111,6 +114,10 @@ struct Args {
     /// URL to which to post startup notification.
     #[arg(long)]
     startup_notification_url: Option<reqwest::Url>,
+
+    /// File to write to when indicating startup.
+    #[arg(long)]
+    startup_notification_file: Option<PathBuf>,
 }
 
 impl Args {
@@ -364,7 +371,25 @@ async fn main_cli() -> Result<()> {
 
     tracing::info!("Listening on {}", args.listen);
 
+    let server = axum::Server::bind(&args.listen)
+        .serve(app.into_make_service())
+        .with_graceful_shutdown(async move {
+            shutdown_receiver.await.ok();
+            tracing::info!("Shutting down");
+        });
+
+    // Spawn here so that post-startup tasks can proceed
+    tokio::spawn(async move {
+        if let Err(e) = server.await {
+            tracing::error!("failed to start up daemon: {e}");
+            exit(1);
+        }
+    });
+
+    // Notify of startup via HTTP
     if let Some(startup_notification_url) = args.startup_notification_url {
+        tracing::debug!("Startup notification via HTTP POST to {startup_notification_url}");
+
         let response = reqwest::Client::new()
             .post(startup_notification_url)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
@@ -390,19 +415,22 @@ async fn main_cli() -> Result<()> {
         }
     }
 
-    let ret = axum::Server::bind(&args.listen)
-        .serve(app.into_make_service())
-        .with_graceful_shutdown(async move {
-            shutdown_receiver.await.ok();
-            tracing::info!("Shutting down");
-        })
-        .await;
+    // Notify of startup by writing "1" to the specified file
+    if let Some(startup_notification_file_path) = args.startup_notification_file {
+        let file_contents: &[u8] = b"1";
 
+        tracing::debug!("Startup notification via file at {startup_notification_file_path:?}");
+
+        let mut notification_file = File::create(&startup_notification_file_path).await?;
+        notification_file.write_all(file_contents).await?;
+
+        tracing::debug!("Created startup notification file at {startup_notification_file_path:?}");
+    }
+
+    // Notify diagnostics endpoint
     if let Some(diagnostic_endpoint) = diagnostic_endpoint {
         state.metrics.send(diagnostic_endpoint).await;
     }
-
-    ret?;
 
     Ok(())
 }
