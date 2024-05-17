@@ -6,11 +6,21 @@ on:
     branches: [main]
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-22.04
+  build-closure:
+    strategy:
+      matrix:
+        runner:
+          - ubuntu-22.04
+          - namespace-profile-default-arm64
+          - macos-12
+          - macos-latest-xlarge
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       id-token: write
+    env:
+      CLOSURE_FILE: magic-nix-cache.${{ matrix.runner }}.closure.xz
+      CLOSURE_KEY: magic-nix-cache-${{ matrix.runner }}-${{ github.sha }}
     steps:
       - uses: actions/checkout@v3
 
@@ -20,26 +30,38 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Build package
-        run: "nix build .# -L --fallback && nix-store --export $(nix-store -qR ./result) | xz -9 > magic-nix-cache.closure.xz"
+        run: |
+          nix build .# -L --fallback && \
+          nix-store --export $(nix-store -qR ./result) | xz -9 > "${{ env.CLOSURE_FILE }}"
 
       - name: Cache magix-nix-cache closure
         uses: actions/cache/save@v4
         with:
-          path: magic-nix-cache.closure.xz
-          key: magic-nix-cache-${{ github.sha }}
+          path: ${{ env.CLOSURE_FILE }}
+          key: ${{ env.CLOSURE_KEY }}
 
   test-magic-nix-cache-action:
-    needs: build-linux
-    runs-on: ubuntu-22.04
+    needs: build-closure
+    strategy:
+      matrix:
+        runner:
+          - ubuntu-22.04
+          - namespace-profile-default-arm64
+          - macos-12
+          - macos-latest-xlarge
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       id-token: write
+    env:
+      CLOSURE_FILE: magic-nix-cache.${{ matrix.runner }}.closure.xz
+      CLOSURE_KEY: magic-nix-cache-${{ matrix.runner }}-${{ github.sha }}
     steps:
       - name: Restore magix-nix-cache closure
         uses: actions/cache/restore@v4
         with:
-          path: magic-nix-cache.closure.xz
-          key: magic-nix-cache-${{ github.sha }}
+          path: ${{ env.CLOSURE_FILE }}
+          key: ${{ env.CLOSURE_KEY }}
           fail-on-cache-miss: true
 
       - name: Install Nix
@@ -48,7 +70,7 @@ jobs:
       - name: Extract
         id: extract
         run: |
-          OUTPUT=$(cat magic-nix-cache.closure.xz | xz -d | nix-store --import)
+          OUTPUT=$(cat ${{ env.CLOSURE_FILE }} | xz -d | nix-store --import)
           MNC_BIN_PATH=$(echo "${OUTPUT}" | tail -n 1)
           MAGIC_NIX_CACHE="${MNC_BIN_PATH}/bin/magic-nix-cache"
 
