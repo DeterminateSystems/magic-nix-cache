@@ -19,11 +19,16 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
       - name: Setup
         id: setup
         run: |
           TMP=$(mktemp -d)
           NETRC="${TMP}/netrc"
+
+          sudo chmod a+rw "${{ env.NIX_CONF }}"
 
           REQUEST_TOKEN="${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"
           ROOT_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}"
@@ -36,9 +41,6 @@ jobs:
 
           echo "::set-output name=token::${JWT_ID_TOKEN}"
           echo "::set-output name=netrc::${NETRC}"
-
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
 
       - name: Set up netrc file
         env:
