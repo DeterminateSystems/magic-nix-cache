@@ -6,54 +6,41 @@ on:
     branches: [main]
 
 jobs:
-  checks:
+  build-linux:
     runs-on: ubuntu-22.04
     permissions:
       contents: read
       id-token: write
-    env:
-      FLAKEHUB_API_ENDPOINT: api.flakehub.com
-      FLAKEHUB_WEB_ENDPOINT: https://flakehub.com
-      NIX_CONF: /etc/nix/nix.conf
-      FLAKEHUB_CACHE: "https://cache.flakehub.com"
     steps:
       - uses: actions/checkout@v3
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
 
-      - name: Setup
-        id: setup
-        run: |
-          TMP=$(mktemp -d)
-          NETRC="${TMP}/netrc"
+      - uses: DeterminateSystems/magic-nix-cache-action@main
 
-          sudo chmod a+rw "${{ env.NIX_CONF }}"
+      - name: Build package
+        run: "nix build .# -L --fallback && nix-store --export $(nix-store -qR ./result) | xz -9 > magic-nix-cache.closure.xz"
 
-          REQUEST_TOKEN="${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"
-          ROOT_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}"
-          JWT_ID_TOKEN=$(curl \
-            --header "authorization: bearer ${REQUEST_TOKEN}" \
-            --header "accept: application/json;api-version=2.0" \
-            --header "content-type: application/json" \
-            --header "user-agent: magic-nix-cache" \
-            "${ROOT_URL}&audience=${{ env.FLAKEHUB_API_ENDPOINT }}")
+      - name: Cache magix-nix-cache closure
+        uses: actions/cache/save@v4
+        with:
+          path: magic-nix-cache.closure.xz
+          key: magic-nix-cache-${{ github.sha }}
 
-          echo "token=${JWT_ID_TOKEN}" >> $GITHUB_OUTPUT
-          echo "netrc=${NETRC}" >> $GITHUB_OUTPUT
+  test-linux:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Restore magix-nix-cache closure
+        uses: actions/cache/restore@v4
+        with:
+          path: magic-nix-cache.closure.xz
+          key: magic-nix-cache-${{ github.sha }}
+          fail-on-cache-miss: true
 
-      - name: Set up netrc file
-        env:
-          NETRC: ${{ steps.setup.outputs.netrc }}
-          TOKEN: ${{ steps.setup.outputs.token }}
-        run: |
-          echo "machine ${{ env.FLAKEHUB_WEB_ENDPOINT }} login flakehub password ${{ env.TOKEN }}" > "${{ env.NETRC }}"
-          echo "machine ${{ env.FLAKEHUB_API_ENDPOINT }} login flakehub password ${{ env.TOKEN }}" >> "${{ env.NETRC }}"
-          echo "extra-substituters = ${{ env.FLAKEHUB_CACHE }}/?trusted=1" >> "${{ env.NIX_CONF }}"
-          echo "netrc-file = ${{ env.NETRC }}" >> "${{ env.NIX_CONF }}"
-
-          echo "netrc file:"
-          cat "${{ env.NETRC }}"
-
-          echo "Nix config:"
-          cat "${{ env.NIX_CONF }}"
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+        with:
+          source-binary: "magic-nix-cache.closure.xz"
