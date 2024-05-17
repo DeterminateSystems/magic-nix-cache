@@ -12,14 +12,19 @@ jobs:
       contents: read
       id-token: write
     env:
-      FLAKEHUB_API_ENDPOINT: "api.flakehub.com"
-      FLAKEHUB_WEB_ENDPOINT: "https://flakehub.com"
+      FLAKEHUB_API_ENDPOINT: api.flakehub.com
+      FLAKEHUB_WEB_ENDPOINT: https://flakehub.com
+      NIX_CONF: /etc/nix/nix.conf
+      FLAKEHUB_CACHE: "https://cache.flakehub.com"
     steps:
       - uses: actions/checkout@v3
 
-      - name: Get JWT
-        id: jwt
+      - name: Setup
+        id: setup
         run: |
+          TMP=$(mktemp -d)
+          NETRC="${TMP}/netrc"
+
           REQUEST_TOKEN="${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"
           ROOT_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}"
           JWT_ID_TOKEN=$(curl \
@@ -30,7 +35,23 @@ jobs:
             "${ROOT_URL}&audience=${{ env.FLAKEHUB_API_ENDPOINT }}")
 
           echo "::set-output name=token::${JWT_ID_TOKEN}"
+          echo "::set-output name=netrc::${NETRC}"
 
-      - name: Display token
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Set up netrc file
+        env:
+          NETRC: ${{ steps.setup.outputs.netrc }}
+          TOKEN: ${{ steps.setup.outputs.token }}
         run: |
-          echo "${{ steps.jwt.outputs.token }}"
+          echo "machine ${{ env.FLAKEHUB_WEB_ENDPOINT }} login flakehub password ${{ env.TOKEN }}" > "${{ env.NETRC }}"
+          echo "machine ${{ env.FLAKEHUB_API_ENDPOINT }} login flakehub password ${{ env.TOKEN }}" >> "${{ env.NETRC }}"
+          echo "extra-substituters = ${{ env.FLAKEHUB_CACHE }}/?trusted=1" >> "${{ env.NIX_CONF }}"
+          echo "netrc-file = ${{ env.NETRC }}" >> "${{ env.NIX_CONF }}"
+
+          echo "netrc file:"
+          cat "${{ env.NETRC }}"
+
+          echo "Nix config:"
+          cat "${{ env.NIX_CONF }}"
