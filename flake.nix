@@ -51,7 +51,6 @@
           packages = with pkgs; [
             bashInteractive
             cranePkgs.rustNightly
-            pkg-config
 
             cargo-bloat
             cargo-edit
