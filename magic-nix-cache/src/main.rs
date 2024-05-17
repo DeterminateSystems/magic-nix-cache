@@ -26,7 +26,6 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::exit;
 use std::sync::Arc;
 
 use ::attic::nix_store::NixStore;
@@ -371,21 +370,6 @@ async fn main_cli() -> Result<()> {
 
     tracing::info!("Listening on {}", args.listen);
 
-    let server = axum::Server::bind(&args.listen)
-        .serve(app.into_make_service())
-        .with_graceful_shutdown(async move {
-            shutdown_receiver.await.ok();
-            tracing::info!("Shutting down");
-        });
-
-    // Spawn here so that post-startup tasks can proceed
-    tokio::spawn(async move {
-        if let Err(e) = server.await {
-            tracing::error!("failed to start up daemon: {e}");
-            exit(1);
-        }
-    });
-
     // Notify of startup via HTTP
     if let Some(startup_notification_url) = args.startup_notification_url {
         tracing::debug!("Startup notification via HTTP POST to {startup_notification_url}");
@@ -427,10 +411,19 @@ async fn main_cli() -> Result<()> {
         tracing::debug!("Created startup notification file at {startup_notification_file_path:?}");
     }
 
-    // Notify diagnostics endpoint
+    let ret = axum::Server::bind(&args.listen)
+        .serve(app.into_make_service())
+        .with_graceful_shutdown(async move {
+            shutdown_receiver.await.ok();
+            tracing::info!("Shutting down");
+        })
+        .await;
+
     if let Some(diagnostic_endpoint) = diagnostic_endpoint {
         state.metrics.send(diagnostic_endpoint).await;
     }
+
+    ret?;
 
     Ok(())
 }
