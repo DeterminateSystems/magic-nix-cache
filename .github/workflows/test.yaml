@@ -29,6 +29,7 @@ jobs:
           key: magic-nix-cache-${{ github.sha }}
 
   test-linux:
+    needs: build-linux
     runs-on: ubuntu-22.04
     permissions:
       contents: read
