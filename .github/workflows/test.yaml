@@ -39,8 +39,8 @@ jobs:
             --header "user-agent: magic-nix-cache" \
             "${ROOT_URL}&audience=${{ env.FLAKEHUB_API_ENDPOINT }}")
 
-          echo "token=${JWT_ID_TOKEN}" >> $GITHUB_STATE
-          echo "netrc=${NETRC}" >> $GITHUB_STATE
+          echo "token=${JWT_ID_TOKEN}" >> $GITHUB_OUTPUT
+          echo "netrc=${NETRC}" >> $GITHUB_OUTPUT
 
       - name: Set up netrc file
         env:
