@@ -7,25 +7,11 @@ license = "Apache-2.0"
 [dependencies]
 gha-cache = { path = "../gha-cache" }
 
-axum = { version = "0.6.18", default-features = false, features = [
-	"json",
-	"tokio",
-] }
+axum = { version = "0.6.18", default-features = false, features = ["json", "tokio"] }
 axum-macros = "0.3.7"
-clap = { version = "4.2.7", default-features = false, features = [
-	"std",
-	"derive",
-	"error-context",
-	"wrap_help",
-] }
+clap = { version = "4.2.7", default-features = false, features = ["std", "derive", "error-context", "wrap_help"] }
 tracing = "0.1.37"
-tracing-subscriber = { version = "0.3.17", default-features = false, features = [
-	"ansi",
-	"env-filter",
-	"fmt",
-	"tracing-log",
-	"smallvec",
-] }
+tracing-subscriber = { version = "0.3.17", default-features = false, features = ["ansi", "env-filter", "fmt", "tracing-log", "smallvec"] }
 tower-http = { version = "0.4.0", features = ["trace"] }
 serde = { version = "1.0.162", features = ["derive"] }
 serde_json = { version = "1.0.96", default-features = false }
@@ -35,11 +21,7 @@ tokio-util = { version = "0.7.8", features = ["io", "compat"] }
 daemonize = "0.5.0"
 is_ci = "1.1.1"
 sha2 = { version = "0.10.6", default-features = false }
-reqwest = { version = "0.11.17", default-features = false, features = [
-	"blocking",
-	"rustls-tls-native-roots",
-	"trust-dns",
-] }
+reqwest = { version = "0.11.17", default-features = false, features = ["blocking", "rustls-tls-native-roots", "trust-dns"] }
 netrc-rs = "0.1.2"
 attic = { git = "https://github.com/DeterminateSystems/attic", branch = "fixups-for-magic-nix-cache" }
 attic-client = { git = "https://github.com/DeterminateSystems/attic", branch = "fixups-for-magic-nix-cache" }
@@ -54,4 +36,11 @@ async-compression = "0.4"
 [dependencies.tokio]
 version = "1.28.0"
 default-features = false
-features = ["fs", "macros", "process", "rt", "rt-multi-thread", "sync"]
+features = [
+	"fs",
+	"macros",
+	"process",
+	"rt",
+	"rt-multi-thread",
+	"sync",
+]

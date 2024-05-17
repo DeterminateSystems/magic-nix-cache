@@ -33,8 +33,6 @@ use anyhow::{anyhow, Context, Result};
 use axum::{extract::Extension, routing::get, Router};
 use clap::Parser;
 use tempfile::NamedTempFile;
-use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::sync::{oneshot, Mutex, RwLock};
 use tracing_subscriber::filter::EnvFilter;
@@ -113,10 +111,6 @@ struct Args {
     /// URL to which to post startup notification.
     #[arg(long)]
     startup_notification_url: Option<reqwest::Url>,
-
-    /// File to write to when indicating startup.
-    #[arg(long)]
-    startup_notification_file: Option<PathBuf>,
 }
 
 impl Args {
@@ -130,12 +124,6 @@ impl Args {
         if environment.is_gitlab_ci() && !self.use_flakehub {
             return Err(error::Error::Config(String::from(
                 "you must set --use-flakehub in GitLab CI",
-            )));
-        }
-
-        if self.startup_notification_url.is_none() && self.startup_notification_file.is_none() {
-            return Err(error::Error::Config(String::from(
-                "you must specify either --startup-notification-url or --startup-notification-file",
             )));
         }
 
@@ -376,10 +364,7 @@ async fn main_cli() -> Result<()> {
 
     tracing::info!("Listening on {}", args.listen);
 
-    // Notify of startup via HTTP
     if let Some(startup_notification_url) = args.startup_notification_url {
-        tracing::debug!("Startup notification via HTTP POST to {startup_notification_url}");
-
         let response = reqwest::Client::new()
             .post(startup_notification_url)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
@@ -403,16 +388,6 @@ async fn main_cli() -> Result<()> {
                 err.with_context(|| "Startup notification failed")?;
             }
         }
-    }
-
-    // Notify of startup via file
-    if let Some(startup_notification_file_path) = args.startup_notification_file {
-        tracing::debug!("Startup notification via file at {startup_notification_file_path:?}");
-
-        let mut notification_file = File::create(&startup_notification_file_path).await?;
-        notification_file.write_all(b"1").await?;
-
-        tracing::debug!("Created startup notification file at {startup_notification_file_path:?}");
     }
 
     let ret = axum::Server::bind(&args.listen)
