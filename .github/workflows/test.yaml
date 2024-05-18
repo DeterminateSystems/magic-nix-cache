@@ -1,68 +1,36 @@
 name: Integration tests
 
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows: ["Build artifacts"]
+    types:
+      - completed
 
 jobs:
-  build-closure:
-    strategy:
-      matrix:
-        runner:
-          - ubuntu-22.04
-          - namespace-profile-default-arm64
-          - macos-12
-          - macos-latest-xlarge
-    runs-on: ${{ matrix.runner }}
-    permissions:
-      contents: read
-      id-token: write
-    env:
-      CLOSURE_FILE: magic-nix-cache.${{ matrix.runner }}.closure.xz
-      CLOSURE_KEY: magic-nix-cache-${{ matrix.runner }}-${{ github.sha }}
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
-
-      - uses: DeterminateSystems/magic-nix-cache-action@main
-
-      - name: Build package
-        run: |
-          nix build .# -L --fallback && \
-          nix-store --export $(nix-store -qR ./result) | xz -9 > "${{ env.CLOSURE_FILE }}"
-
-      - name: Cache magix-nix-cache closure
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.CLOSURE_FILE }}
-          key: ${{ env.CLOSURE_KEY }}
-
   test-magic-nix-cache-action:
-    needs: build-closure
+    runs-on: ${{ matrix.systems.runner }}
+    env:
+      CLOSURE_FILE: magic-nix-cache-${{ matrix.systems.system }}
     strategy:
       matrix:
-        runner:
-          - ubuntu-22.04
-          - namespace-profile-default-arm64
-          - macos-12
-          - macos-latest-xlarge
-    runs-on: ${{ matrix.runner }}
+        systems:
+          - system: X64-Linux
+            runner: ubuntu-22.04
+          - system: ARM64-Linux
+            runner: namespace-profile-default-arm64
+          - system: X64-macOS
+            runner: macos-12
+          - system: ARM64-macOS
+            runner: macos-latest-xlarge
     permissions:
       contents: read
       id-token: write
-    env:
-      CLOSURE_FILE: magic-nix-cache.${{ matrix.runner }}.closure.xz
-      CLOSURE_KEY: magic-nix-cache-${{ matrix.runner }}-${{ github.sha }}
     steps:
-      - name: Restore magix-nix-cache closure
-        uses: actions/cache/restore@v4
+      - name: Download artifact
+        uses: actions/download-artifact@v3
         with:
+          name: ${{ env.CLOSURE_FILE }}
           path: ${{ env.CLOSURE_FILE }}
-          key: ${{ env.CLOSURE_KEY }}
-          fail-on-cache-miss: true
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main

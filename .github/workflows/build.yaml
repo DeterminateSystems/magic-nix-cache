@@ -7,6 +7,9 @@ on:
 jobs:
   build-artifacts:
     runs-on: ${{ matrix.systems.runner }}
+    env:
+      CLOSURE_FILE: magic-nix-cache.closure.xz
+      CLOSURE_KEY: magic-nix-cache-${{ matrix.systems.runner }}-${{ github.sha }}
     strategy:
       matrix:
         systems:
@@ -30,12 +33,16 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - name: Build package
-        run: "nix build .# -L --fallback && nix-store --export $(nix-store -qR ./result) | xz -9 > magic-nix-cache.closure.xz"
+        run: |
+          # Cache dev shell
+          nix build .#devShells.${{ matrix.systems.nix-system }}
+
+          nix build .# -L --fallback && nix-store --export $(nix-store -qR ./result) | xz -9 > "${{ env.CLOSURE_FILE }}"
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
           name: magic-nix-cache-${{ matrix.systems.system }}
-          path: magic-nix-cache.closure.xz
+          path: ${{ env.CLOSURE_FILE }}
           retention-days: 1
