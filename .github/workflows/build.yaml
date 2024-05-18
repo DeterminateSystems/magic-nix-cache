@@ -39,7 +39,8 @@ jobs:
 
       - name: Build package and create closure
         run: |
-          nix build .# -L --fallback && nix-store --export $(nix-store -qR ./result) | xz -9 > "${{ env.CLOSURE_FILE }}"
+          nix build .# -L --fallback && \
+            nix-store --export $(nix-store -qR ./result) | xz -9 > "${{ env.CLOSURE_FILE }}"
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v3.1.2

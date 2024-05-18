@@ -1,14 +1,42 @@
-name: Integration tests
+name: Run checks and integration test
 
 on:
-  workflow_run:
-    workflows: ["Build artifacts"]
-    types:
-      - completed
+  pull_request:
+  push:
+    branches: [main]
 
 jobs:
+  checks:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Check health of flake.lock
+        uses: DeterminateSystems/flake-checker-action@main
+        with:
+          fail-mode: true
+
+      - name: Check Rust formatting
+        run: nix develop --command cargo fmt --check
+
+      - name: Clippy
+        run: nix develop --command cargo clippy
+
+  build:
+    needs: checks
+    uses: ./.github/workflows/build.yaml
+    secrets: inherit
+
   test-magic-nix-cache-action:
     runs-on: ${{ matrix.systems.runner }}
+    needs: build
     env:
       CLOSURE_FILE: magic-nix-cache-${{ matrix.systems.system }}
     strategy:
