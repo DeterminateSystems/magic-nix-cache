@@ -9,7 +9,6 @@ jobs:
     runs-on: ${{ matrix.systems.runner }}
     env:
       CLOSURE_FILE: magic-nix-cache.closure.xz
-      CLOSURE_KEY: magic-nix-cache-${{ matrix.systems.runner }}-${{ github.sha }}
     strategy:
       matrix:
         systems:
