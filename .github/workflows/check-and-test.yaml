@@ -41,7 +41,8 @@ jobs:
     runs-on: ${{ matrix.systems.runner }}
     needs: build
     env:
-      CLOSURE_FILE: magic-nix-cache-${{ matrix.systems.system }}
+      CLOSURE_NAME: magic-nix-cache-${{ matrix.systems.system }}
+      CLOSURE_PATH: magic-nix-cache.closure.xz
     strategy:
       matrix:
         systems:
@@ -60,8 +61,8 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v3
         with:
-          name: ${{ env.CLOSURE_FILE }}
-          path: ${{ env.CLOSURE_FILE }}
+          name: ${{ env.CLOSURE_NAME }}
+          path: ${{ env.CLOSURE_PATH }}
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
@@ -69,7 +70,7 @@ jobs:
       - name: Extract
         id: extract
         run: |
-          OUTPUT=$(cat ${{ env.CLOSURE_FILE }} | xz -d | nix-store --import)
+          OUTPUT=$(cat ${{ env.CLOSURE_PATH }} | xz -d | nix-store --import)
           MNC_BIN_PATH=$(echo "${OUTPUT}" | tail -n 1)
           MAGIC_NIX_CACHE="${MNC_BIN_PATH}/bin/magic-nix-cache"
 
