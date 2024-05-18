@@ -41,9 +41,8 @@ jobs:
     runs-on: ${{ matrix.systems.runner }}
     needs: build
     env:
-      CLOSURE_NAME: magic-nix-cache-${{ matrix.systems.system }}
-      CLOSURE_PATH: magic-nix-cache
-      ARCHIVE: magic-nix-cache.closure.xz
+      ARTIFACT_KEY: magic-nix-cache-${{ matrix.systems.system }}
+      ARCHIVE_NAME: magic-nix-cache.closure.xz
     strategy:
       matrix:
         systems:
@@ -59,25 +58,26 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Download artifact
+      - name: Download closure for ${{ matrix.systems.system }}
         uses: actions/download-artifact@v3
         with:
-          name: ${{ env.CLOSURE_NAME }}
-          path: ${{ env.CLOSURE_PATH }}
+          name: ${{ env.ARTIFACT_KEY }}
+          path: ${{ env.ARTIFACT_KEY }}
 
-      - name: Install Nix
+      - name: Install Nix on ${{ matrix.systems.system }}
         uses: DeterminateSystems/nix-installer-action@main
 
-      - name: Extract
+      - name: Extract closure for ${{ matrix.systems.system }}
         id: extract
         run: |
-          ARTIFACT="${{ env.CLOSURE_PATH }}/${{ env.ARCHIVE }}"
+          ARTIFACT="${{ env.ARTIFACT_KEY }}/${{ env.ARCHIVE_NAME }}"
           OUTPUT=$(cat ${ARTIFACT} | xz -d | nix-store --import)
           MNC_BIN_PATH=$(echo "${OUTPUT}" | tail -n 1)
           MAGIC_NIX_CACHE="${MNC_BIN_PATH}/bin/magic-nix-cache"
 
           echo "mnc-path=${MAGIC_NIX_CACHE}" >> "$GITHUB_OUTPUT"
 
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Test magic-nix-cache-action@main on ${{ matrix.systems.runner }}
+        uses: DeterminateSystems/magic-nix-cache-action@main
         with:
           source-binary: "${{ steps.extract.outputs.mnc-path }}"
