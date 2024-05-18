@@ -42,7 +42,8 @@ jobs:
     needs: build
     env:
       CLOSURE_NAME: magic-nix-cache-${{ matrix.systems.system }}
-      CLOSURE_PATH: magic-nix-cache.closure.xz
+      CLOSURE_PATH: magic-nix-cache
+      ARCHIVE: magic-nix-cache.closure.xz
     strategy:
       matrix:
         systems:
@@ -70,7 +71,8 @@ jobs:
       - name: Extract
         id: extract
         run: |
-          OUTPUT=$(cat ${{ env.CLOSURE_PATH }} | xz -d | nix-store --import)
+          ARTIFACT="${{ env.CLOSURE_PATH }}/${{ env.ARCHIVE }}"
+          OUTPUT=$(cat ${ARTIFACT} | xz -d | nix-store --import)
           MNC_BIN_PATH=$(echo "${OUTPUT}" | tail -n 1)
           MAGIC_NIX_CACHE="${MNC_BIN_PATH}/bin/magic-nix-cache"
 

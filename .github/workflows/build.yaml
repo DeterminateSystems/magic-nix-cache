@@ -9,7 +9,7 @@ jobs:
     runs-on: ${{ matrix.systems.runner }}
     env:
       CLOSURE_NAME: magic-nix-cache-${{ matrix.systems.system }}
-      CLOSURE_PATH: magic-nix-cache.closure.xz
+      ARCHIVE: magic-nix-cache.closure.xz
     strategy:
       matrix:
         systems:
@@ -40,12 +40,12 @@ jobs:
       - name: Build package and create closure
         run: |
           nix build .# -L --fallback && \
-            nix-store --export $(nix-store -qR ./result) | xz -9 > "${{ env.CLOSURE_PATH }}"
+            nix-store --export $(nix-store -qR ./result) | xz -9 > "${{ env.ARCHIVE }}"
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
           name: ${{ env.CLOSURE_NAME }}
-          path: ${{ env.CLOSURE_PATH }}
+          path: ${{ env.ARCHIVE }}
           retention-days: 1
