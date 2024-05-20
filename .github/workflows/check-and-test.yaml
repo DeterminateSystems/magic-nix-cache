@@ -58,6 +58,8 @@ jobs:
       contents: read
       id-token: write
     steps:
+      - uses: actions/checkout@v3
+
       - name: Download closure for ${{ matrix.systems.system }}
         uses: actions/download-artifact@v3
         with:
@@ -82,3 +84,7 @@ jobs:
         with:
           source-binary: "${{ steps.extract.outputs.mnc-path }}"
           strict-mode: true
+
+      - name: Run nix to test magic-nix-cache-action
+        run: |
+          nix develop --command echo "just testing"
