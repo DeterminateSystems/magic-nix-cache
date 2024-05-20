@@ -7,6 +7,12 @@ on:
 jobs:
   build-artifacts:
     runs-on: ${{ matrix.systems.runner }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARTIFACT_KEY: magic-nix-cache-${{ matrix.systems.system }}
+      ARCHIVE_NAME: magic-nix-cache.closure.xz
     strategy:
       matrix:
         systems:
@@ -22,20 +28,26 @@ jobs:
           - nix-system: aarch64-darwin
             system: ARM64-macOS
             runner: macos-latest-xlarge
-    permissions:
-      contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v3
-      - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
-      - name: Build package
-        run: "nix build .# -L --fallback && nix-store --export $(nix-store -qR ./result) | xz -9 > magic-nix-cache.closure.xz"
+      - name: Install Nix on ${{ matrix.systems.system }}
+        uses: DeterminateSystems/nix-installer-action@main
+      - name: Magic Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
 
-      - name: Upload a Build Artifact
+      - name: Build and cache dev shell for ${{ matrix.systems.nix-system }}
+        run: |
+          nix build ".#devShells.${{ matrix.systems.nix-system }}.default"
+
+      - name: Build package and create closure for ${{ matrix.systems.system }}
+        run: |
+          nix build .# -L --fallback && \
+            nix-store --export $(nix-store -qR ./result) | xz -9 > "${{ env.ARCHIVE_NAME }}"
+
+      - name: Upload magic-nix-cache closure for ${{ matrix.systems.system }}
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
-          name: magic-nix-cache-${{ matrix.systems.system }}
-          path: magic-nix-cache.closure.xz
+          name: ${{ env.ARTIFACT_KEY }}
+          path: ${{ env.ARCHIVE_NAME }}
           retention-days: 1

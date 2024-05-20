@@ -1,0 +1,90 @@
+name: Run checks and integration test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    name: Nix and Rust checks
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Check health of flake.lock
+        uses: DeterminateSystems/flake-checker-action@main
+        with:
+          fail-mode: true
+
+      - name: Check Rust formatting
+        run: nix develop --command cargo fmt --check
+
+      - name: Clippy
+        run: nix develop --command cargo clippy
+
+  build:
+    name: Build artifacts
+    needs: checks
+    uses: ./.github/workflows/build.yaml
+    secrets: inherit
+
+  action-integration-test:
+    name: Integration test for magic-nix-cache-action
+    runs-on: ${{ matrix.systems.runner }}
+    needs: build
+    env:
+      ARTIFACT_KEY: magic-nix-cache-${{ matrix.systems.system }}
+      ARCHIVE_NAME: magic-nix-cache.closure.xz
+    strategy:
+      matrix:
+        systems:
+          - system: X64-Linux
+            runner: ubuntu-22.04
+          - system: ARM64-Linux
+            runner: namespace-profile-default-arm64
+          - system: X64-macOS
+            runner: macos-12
+          - system: ARM64-macOS
+            runner: macos-latest-xlarge
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download closure for ${{ matrix.systems.system }}
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ env.ARTIFACT_KEY }}
+          path: ${{ env.ARTIFACT_KEY }}
+
+      - name: Install Nix on ${{ matrix.systems.system }}
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Extract closure for ${{ matrix.systems.system }}
+        id: extract
+        run: |
+          ARTIFACT="${{ env.ARTIFACT_KEY }}/${{ env.ARCHIVE_NAME }}"
+          OUTPUT=$(cat ${ARTIFACT} | xz -d | nix-store --import)
+          MNC_BIN_PATH=$(echo "${OUTPUT}" | tail -n 1)
+          MAGIC_NIX_CACHE="${MNC_BIN_PATH}/bin/magic-nix-cache"
+
+          echo "mnc-path=${MAGIC_NIX_CACHE}" >> "$GITHUB_OUTPUT"
+
+      - name: Test magic-nix-cache-action@test-fail-mode on ${{ matrix.systems.runner }}
+        uses: DeterminateSystems/magic-nix-cache-action@test-fail-mode
+        with:
+          source-binary: "${{ steps.extract.outputs.mnc-path }}"
+          strict-mode: true
+
+      - name: Run nix to test magic-nix-cache-action
+        run: |
+          nix develop --command echo "just testing"

@@ -10,13 +10,7 @@ on:
 
 jobs:
   build:
-    uses: ./.github/workflows/build.yaml
-    secrets: inherit
-
-  release:
-    needs: build
-
-    concurrency: release
+    # We want to build artifacts only if the `upload to s3` label is applied
     # Only intra-repo PRs are allowed to have PR artifacts uploaded
     # We only want to trigger once the upload once in the case the upload label is added, not when any label is added
     if: |
@@ -25,6 +19,12 @@ jobs:
         (github.event.action == 'labeled' && github.event.label.name == 'upload to s3')
         || (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'upload to s3'))
       )
+    uses: ./.github/workflows/build.yaml
+    secrets: inherit
+
+  release:
+    needs: build
+    concurrency: release
     runs-on: ubuntu-latest
     permissions:
       id-token: write # In order to request a JWT for AWS auth
