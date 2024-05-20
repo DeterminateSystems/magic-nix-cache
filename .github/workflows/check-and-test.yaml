@@ -77,7 +77,8 @@ jobs:
 
           echo "mnc-path=${MAGIC_NIX_CACHE}" >> "$GITHUB_OUTPUT"
 
-      - name: Test magic-nix-cache-action@main on ${{ matrix.systems.runner }}
-        uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Test magic-nix-cache-action@test-fail-mode on ${{ matrix.systems.runner }}
+        uses: DeterminateSystems/magic-nix-cache-action@test-fail-mode
         with:
           source-binary: "${{ steps.extract.outputs.mnc-path }}"
+          strict-mode: true
