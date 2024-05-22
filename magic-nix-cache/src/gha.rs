@@ -157,6 +157,15 @@ async fn upload_path(
     // Upload the NAR.
     let nar_path = format!("{}.nar.zstd", path_info.nar_hash.to_base32());
 
+    if path_info.nar_size < 5000 {
+        tracing::debug!(
+            "Skipping small file '{}' ({}b)",
+            nar_path,
+            path_info.nar_size
+        );
+        return Ok(());
+    }
+
     let nar_allocation = api.allocate_file_with_random_suffix(&nar_path).await?;
 
     let nar_stream = store.nar_from_path(path.clone());
