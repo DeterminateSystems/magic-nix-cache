@@ -69,21 +69,11 @@ jobs:
       - name: Install Nix on ${{ matrix.systems.system }}
         uses: DeterminateSystems/nix-installer-action@main
 
-      - name: Extract closure for ${{ matrix.systems.system }}
-        id: extract
-        run: |
-          ARTIFACT="${{ env.ARTIFACT_KEY }}/${{ env.ARCHIVE_NAME }}"
-          OUTPUT=$(cat ${ARTIFACT} | xz -d | nix-store --import)
-          MNC_BIN_PATH=$(echo "${OUTPUT}" | tail -n 1)
-          MAGIC_NIX_CACHE="${MNC_BIN_PATH}/bin/magic-nix-cache"
-
-          echo "mnc-path=${MAGIC_NIX_CACHE}" >> "$GITHUB_OUTPUT"
-
-      - name: Test magic-nix-cache-action@test-fail-mode on ${{ matrix.systems.runner }}
-        uses: DeterminateSystems/magic-nix-cache-action@test-fail-mode
+      - name: Test magic-nix-cache-action@main on ${{ matrix.systems.runner }}
+        uses: DeterminateSystems/magic-nix-cache-action@main
         with:
-          source-binary: "${{ steps.extract.outputs.mnc-path }}"
-          strict-mode: true
+          source-binary: "${{ env.ARTIFACT_KEY }}/${{ env.ARCHIVE_NAME }}"
+          _internal-strict-mode: true
 
       - name: Run nix to test magic-nix-cache-action
         run: |
