@@ -83,7 +83,7 @@ jobs:
         uses: DeterminateSystems/magic-nix-cache-action@test-fail-mode
         with:
           source-binary: "${{ steps.extract.outputs.mnc-path }}"
-          strict-mode: true
+          _internal-strict-mode: true
 
       - name: Run nix to test magic-nix-cache-action
         run: |
