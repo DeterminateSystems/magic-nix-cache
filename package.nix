@@ -9,12 +9,11 @@
 , rust-analyzer
 , clippy
 , rustfmt
-, version
 }:
 
 let
   ignoredPaths = [ ".github" "target" "book" ];
-
+  version = (builtins.fromTOML (builtins.readFile ./magic-nix-cache/Cargo.toml)).package.version;
 in
 rustPlatform.buildRustPackage rec {
   pname = "magic-nix-cache";
