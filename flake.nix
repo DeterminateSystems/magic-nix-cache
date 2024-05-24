@@ -21,6 +21,7 @@
 
   outputs = { self, nixpkgs, nix, ... }@inputs:
     let
+      mncMeta = (builtins.fromTOML (builtins.readFile ./magic-nix-cache/Cargo.toml)).package;
       overlays = [ inputs.rust-overlay.overlays.default nix.overlays.default ];
       supportedSystems = [
         "aarch64-linux"
@@ -40,7 +41,9 @@
     in
     {
       packages = forEachSupportedSystem ({ pkgs, cranePkgs, ... }: rec {
-        magic-nix-cache = pkgs.callPackage ./package.nix { };
+        magic-nix-cache = pkgs.callPackage ./package.nix {
+          inherit (mncMeta) version;
+        };
         #inherit (cranePkgs) magic-nix-cache;
         default = magic-nix-cache;
       });
