@@ -1,4 +1,6 @@
-{ lib, stdenv, rustPlatform
+{ lib
+, stdenv
+, rustPlatform
 , pkg-config
 , installShellFiles
 , nix
@@ -11,10 +13,11 @@
 
 let
   ignoredPaths = [ ".github" "target" "book" ];
-
-in rustPlatform.buildRustPackage rec {
+  version = (builtins.fromTOML (builtins.readFile ./magic-nix-cache/Cargo.toml)).package.version;
+in
+rustPlatform.buildRustPackage rec {
   pname = "magic-nix-cache";
-  version = "0.1.0";
+  inherit version;
 
   src = lib.cleanSourceWith {
     filter = name: type: !(type == "directory" && builtins.elem (baseNameOf name) ignoredPaths);
@@ -30,7 +33,8 @@ in rustPlatform.buildRustPackage rec {
   ];
 
   buildInputs = [
-    nix boost
+    nix
+    boost
   ] ++ lib.optionals stdenv.isDarwin (with darwin.apple_sdk.frameworks; [
     SystemConfiguration
   ]);
