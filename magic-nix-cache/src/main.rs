@@ -21,6 +21,7 @@ mod gha;
 mod telemetry;
 mod util;
 
+use std::borrow::BorrowMut;
 use std::collections::HashSet;
 use std::fs::{self, create_dir_all};
 use std::io::Write;
@@ -103,7 +104,7 @@ struct Args {
 
     /// The location of `nix.conf`.
     #[arg(long)]
-    nix_conf: PathBuf,
+    nix_conf: Option<PathBuf>,
 
     /// Whether to use the GHA cache.
     #[arg(long)]
@@ -185,15 +186,21 @@ async fn main_cli() -> Result<()> {
 
     let metrics = Arc::new(telemetry::TelemetryReport::new());
 
-    if let Some(parent) = Path::new(&args.nix_conf).parent() {
-        create_dir_all(parent).with_context(|| "Creating parent directories of nix.conf")?;
-    }
+    let mut nix_conf_file: Option<std::fs::File> = None;
 
-    let mut nix_conf = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&args.nix_conf)
-        .with_context(|| "Creating nix.conf")?;
+    if let Some(nix_conf_path) = &args.nix_conf {
+        if let Some(parent) = Path::new(&nix_conf_path).parent() {
+            create_dir_all(parent).with_context(|| "Creating parent directories of nix.conf")?;
+        }
+
+        nix_conf_file = Some(
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(nix_conf_path)
+                .with_context(|| "Creating nix.conf")?,
+        );
+    }
 
     let store = Arc::new(NixStore::connect()?);
 
@@ -221,16 +228,18 @@ async fn main_cli() -> Result<()> {
         .await
         {
             Ok(state) => {
-                nix_conf
-                    .write_all(
-                        format!(
-                            "extra-substituters = {}?trusted=1\nnetrc-file = {}\n",
-                            &flakehub_cache_server,
-                            flakehub_api_server_netrc.display()
+                if let Some(ref mut nix_conf_file) = nix_conf_file {
+                    nix_conf_file
+                        .write_all(
+                            format!(
+                                "extra-substituters = {}?trusted=1\nnetrc-file = {}\n",
+                                &flakehub_cache_server,
+                                flakehub_api_server_netrc.display()
+                            )
+                            .as_bytes(),
                         )
-                        .as_bytes(),
-                    )
-                    .with_context(|| "Writing to nix.conf")?;
+                        .with_context(|| "Writing to nix.conf")?;
+                }
 
                 tracing::info!("FlakeHub cache is enabled.");
                 Some(state)
@@ -276,9 +285,11 @@ async fn main_cli() -> Result<()> {
         )
         .with_context(|| "Failed to initialize GitHub Actions Cache API")?;
 
-        nix_conf
-            .write_all(format!("extra-substituters = http://{}?trusted=1&compression=zstd&parallel-compression=true&priority=1\n", args.listen).as_bytes())
-            .with_context(|| "Writing to nix.conf")?;
+        if let Some(ref mut nix_conf_file) = nix_conf_file {
+            nix_conf_file
+          .write_all(format!("extra-substituters = http://{}?trusted=1&compression=zstd&parallel-compression=true&priority=1\n", args.listen).as_bytes())
+          .with_context(|| "Writing to nix.conf")?;
+        }
 
         tracing::info!("Native GitHub Action cache is enabled.");
         Some(gha_cache)
@@ -338,17 +349,19 @@ async fn main_cli() -> Result<()> {
     };
 
     /* Update nix.conf. */
-    nix_conf
-        .write_all(
-            format!(
-                "fallback = true\npost-build-hook = {}\n",
-                post_build_hook_script.display()
+    if let Some(ref mut nix_conf_file) = nix_conf_file.borrow_mut() {
+        nix_conf_file
+            .write_all(
+                format!(
+                    "fallback = true\npost-build-hook = {}\n",
+                    post_build_hook_script.display()
+                )
+                .as_bytes(),
             )
-            .as_bytes(),
-        )
-        .with_context(|| "Writing to nix.conf")?;
+            .with_context(|| "Writing to nix.conf")?;
+    }
 
-    drop(nix_conf);
+    drop(nix_conf_file);
 
     let diagnostic_endpoint = match args.diagnostic_endpoint.as_str() {
         "" => {

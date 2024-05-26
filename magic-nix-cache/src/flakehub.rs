@@ -315,7 +315,7 @@ async fn rewrite_github_actions_token(
     let token_response: TokenResponse = token_response
         .json()
         .await
-        .with_context(|| format!("converting response into json"))?;
+        .with_context(|| String::from("converting response into json"))?;
 
     let new_github_jwt_string = token_response.value;
     let netrc_contents = tokio::fs::read_to_string(netrc_path)
