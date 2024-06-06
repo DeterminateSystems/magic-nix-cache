@@ -38,9 +38,24 @@ pub async fn init_cache(
 ) -> Result<State> {
     // Parse netrc to get the credentials for api.flakehub.com.
     let netrc = {
-        let mut netrc_file = File::open(flakehub_api_server_netrc).await?;
+        let mut netrc_file = File::open(flakehub_api_server_netrc).await.map_err(|e| {
+            Error::Internal(format!(
+                "Failed to open {}: {}",
+                flakehub_api_server_netrc.display(),
+                e
+            ))
+        })?;
         let mut netrc_contents = String::new();
-        netrc_file.read_to_string(&mut netrc_contents).await?;
+        netrc_file
+            .read_to_string(&mut netrc_contents)
+            .await
+            .map_err(|e| {
+                Error::Internal(format!(
+                    "Failed to read {} contents: {}",
+                    flakehub_api_server_netrc.display(),
+                    e
+                ))
+            })?;
         netrc_rs::Netrc::parse(netrc_contents, false).map_err(Error::Netrc)?
     };
 
@@ -84,7 +99,15 @@ pub async fn init_cache(
             .create(false)
             .append(true)
             .open(flakehub_api_server_netrc)
-            .await?;
+            .await
+            .map_err(|e| {
+                Error::Internal(format!(
+                    "Failed to open {} for appending: {}",
+                    flakehub_api_server_netrc.display(),
+                    e
+                ))
+            })?;
+
         netrc_file
             .write_all(
                 format!(
@@ -93,7 +116,14 @@ pub async fn init_cache(
                 )
                 .as_bytes(),
             )
-            .await?;
+            .await
+            .map_err(|e| {
+                Error::Internal(format!(
+                    "Failed to write credentials to {}: {}",
+                    flakehub_api_server_netrc.display(),
+                    e
+                ))
+            })?;
     }
 
     let server_config = ServerConfig {
