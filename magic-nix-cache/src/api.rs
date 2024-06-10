@@ -6,6 +6,7 @@ use attic::nix_store::StorePath;
 use axum::{extract::Extension, routing::post, Json, Router};
 use axum_macros::debug_handler;
 use serde::{Deserialize, Serialize};
+use tokio::fs::read_to_string;
 
 use super::State;
 use crate::error::{Error, Result};
@@ -114,7 +115,7 @@ async fn workflow_finish(
 
     // NOTE(cole-h): see `init_logging`
     if let Some(logfile) = &state.logfile {
-        let logfile_contents = std::fs::read_to_string(logfile)?;
+        let logfile_contents = read_to_string(logfile).await?;
         println!("Every log line throughout the lifetime of the program:");
         println!("\n{logfile_contents}\n");
     }

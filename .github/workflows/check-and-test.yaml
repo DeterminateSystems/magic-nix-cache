@@ -28,7 +28,7 @@ jobs:
         run: nix develop --command cargo fmt --check
 
       - name: Clippy
-        run: nix develop --command cargo clippy
+        run: nix develop --command cargo clippy --all --all-targets --all-features --  -Dwarnings
 
   build:
     name: Build artifacts
