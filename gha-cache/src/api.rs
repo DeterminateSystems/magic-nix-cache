@@ -473,8 +473,11 @@ impl Api {
             .send()
             .await?
             .check_json()
-            .await
-            .inspect_err(|e| self.circuit_breaker_trip_on_429(e));
+            .await;
+
+        if let Err(ref e) = res {
+            self.circuit_breaker_trip_on_429(e);
+        }
 
         match res {
             Ok(entry) => Ok(Some(entry)),
@@ -515,10 +518,13 @@ impl Api {
             .send()
             .await?
             .check_json()
-            .await
-            .inspect_err(|e| self.circuit_breaker_trip_on_429(e))?;
+            .await;
 
-        Ok(res)
+        if let Err(ref e) = res {
+            self.circuit_breaker_trip_on_429(e);
+        }
+
+        res
     }
 
     /// Finalizes uploading to a cache.
@@ -534,14 +540,18 @@ impl Api {
         #[cfg(debug_assertions)]
         self.stats.post.fetch_add(1, Ordering::SeqCst);
 
-        self.client
+        if let Err(e) = self
+            .client
             .post(self.construct_url(&format!("caches/{}", cache_id.0)))
             .json(&req)
             .send()
             .await?
             .check()
             .await
-            .inspect_err(|e| self.circuit_breaker_trip_on_429(e))?;
+        {
+            self.circuit_breaker_trip_on_429(&e);
+            return Err(e);
+        }
 
         Ok(())
     }
