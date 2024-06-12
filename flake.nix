@@ -56,6 +56,7 @@
             cargo-bloat
             cargo-edit
             cargo-udeps
+            cargo-watch
             bacon
 
             age

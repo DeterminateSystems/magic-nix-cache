@@ -4,7 +4,7 @@
 
 use std::fmt;
 #[cfg(debug_assertions)]
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -53,6 +53,9 @@ pub enum Error {
     #[error("Failed to initialize the client: {0}")]
     InitError(Box<dyn std::error::Error + Send + Sync>),
 
+    #[error("Circuit breaker tripped.")]
+    CircuitBreakerTripped,
+
     #[error("Request error: {0}")]
     RequestError(#[from] reqwest::Error), // TODO: Better errors
 
@@ -95,6 +98,8 @@ pub struct Api {
 
     /// The concurrent upload limit.
     concurrency_limit: Arc<Semaphore>,
+
+    circuit_breaker_429_tripped: Arc<AtomicBool>,
 
     /// Backend request statistics.
     #[cfg(debug_assertions)]
@@ -264,9 +269,14 @@ impl Api {
             version_hasher,
             client,
             concurrency_limit: Arc::new(Semaphore::new(MAX_CONCURRENCY)),
+            circuit_breaker_429_tripped: Arc::new(AtomicBool::from(false)),
             #[cfg(debug_assertions)]
             stats: Default::default(),
         })
+    }
+
+    pub fn circuit_breaker_tripped(&self) -> bool {
+      self.circuit_breaker_429_tripped.load(Ordering::Relaxed)
     }
 
     /// Mutates the cache version/namespace.
@@ -324,6 +334,10 @@ impl Api {
     where
         S: AsyncRead + Unpin + Send,
     {
+      if self.circuit_breaker_429_tripped.load(Ordering::Relaxed) {
+        return Err(Error::CircuitBreakerTripped);
+      }
+
         let mut offset = 0;
         let mut futures = Vec::new();
         loop {
@@ -347,6 +361,7 @@ impl Api {
             futures.push({
                 let client = self.client.clone();
                 let concurrency_limit = self.concurrency_limit.clone();
+                let circuit_breaker_429_tripped = self.circuit_breaker_429_tripped.clone();
                 let url = self.construct_url(&format!("caches/{}", allocation.0 .0));
 
                 tokio::task::spawn(async move {
@@ -380,6 +395,11 @@ impl Api {
 
                     drop(permit);
 
+
+                    if let Err(Error::ApiError{ status: reqwest::StatusCode::TOO_MANY_REQUESTS, info: ref _info }) = r {
+                      circuit_breaker_429_tripped.store(true, Ordering::Relaxed);
+                    }
+
                     r
                 })
             });
@@ -401,6 +421,11 @@ impl Api {
 
     /// Downloads a file based on a list of key prefixes.
     pub async fn get_file_url(&self, keys: &[&str]) -> Result<Option<String>> {
+
+      if self.circuit_breaker_429_tripped.load(Ordering::Relaxed) {
+        return Err(Error::CircuitBreakerTripped);
+      }
+
         Ok(self
             .get_cache_entry(keys)
             .await?
@@ -419,6 +444,10 @@ impl Api {
 
     /// Retrieves a cache based on a list of key prefixes.
     async fn get_cache_entry(&self, keys: &[&str]) -> Result<Option<ArtifactCacheEntry>> {
+      if self.circuit_breaker_429_tripped.load(Ordering::Relaxed) {
+        return Err(Error::CircuitBreakerTripped);
+      }
+
         #[cfg(debug_assertions)]
         self.stats.get.fetch_add(1, Ordering::SeqCst);
 
@@ -448,6 +477,11 @@ impl Api {
         key: &str,
         cache_size: Option<usize>,
     ) -> Result<ReserveCacheResponse> {
+
+      if self.circuit_breaker_429_tripped.load(Ordering::Relaxed) {
+        return Err(Error::CircuitBreakerTripped);
+      }
+
         tracing::debug!("Reserving cache for {}", key);
 
         let req = ReserveCacheRequest {
@@ -473,6 +507,11 @@ impl Api {
 
     /// Finalizes uploading to a cache.
     async fn commit_cache(&self, cache_id: CacheId, size: usize) -> Result<()> {
+
+      if self.circuit_breaker_429_tripped.load(Ordering::Relaxed) {
+        return Err(Error::CircuitBreakerTripped);
+      }
+
         tracing::debug!("Commiting cache {:?}", cache_id);
 
         let req = CommitCacheRequest { size };
