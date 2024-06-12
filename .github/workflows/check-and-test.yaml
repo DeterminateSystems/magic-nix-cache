@@ -78,3 +78,6 @@ jobs:
       - name: Run nix to test magic-nix-cache-action
         run: |
           nix develop --command echo "just testing"
+      - name: Exhaust our GitHub Actions Cache tokens
+        run: |
+          nix build .#veryLongChain -v
