@@ -334,7 +334,7 @@ impl Api {
     where
         S: AsyncRead + Unpin + Send,
     {
-      if self.circuit_breaker_429_tripped.load(Ordering::Relaxed) {
+      if self.circuit_breaker_tripped() {
         return Err(Error::CircuitBreakerTripped);
       }
 
@@ -422,7 +422,7 @@ impl Api {
     /// Downloads a file based on a list of key prefixes.
     pub async fn get_file_url(&self, keys: &[&str]) -> Result<Option<String>> {
 
-      if self.circuit_breaker_429_tripped.load(Ordering::Relaxed) {
+      if self.circuit_breaker_tripped() {
         return Err(Error::CircuitBreakerTripped);
       }
 
@@ -444,7 +444,7 @@ impl Api {
 
     /// Retrieves a cache based on a list of key prefixes.
     async fn get_cache_entry(&self, keys: &[&str]) -> Result<Option<ArtifactCacheEntry>> {
-      if self.circuit_breaker_429_tripped.load(Ordering::Relaxed) {
+      if self.circuit_breaker_tripped() {
         return Err(Error::CircuitBreakerTripped);
       }
 
@@ -478,7 +478,7 @@ impl Api {
         cache_size: Option<usize>,
     ) -> Result<ReserveCacheResponse> {
 
-      if self.circuit_breaker_429_tripped.load(Ordering::Relaxed) {
+      if self.circuit_breaker_tripped() {
         return Err(Error::CircuitBreakerTripped);
       }
 
@@ -508,7 +508,7 @@ impl Api {
     /// Finalizes uploading to a cache.
     async fn commit_cache(&self, cache_id: CacheId, size: usize) -> Result<()> {
 
-      if self.circuit_breaker_429_tripped.load(Ordering::Relaxed) {
+      if self.circuit_breaker_tripped() {
         return Err(Error::CircuitBreakerTripped);
       }
 
