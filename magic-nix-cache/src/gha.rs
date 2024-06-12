@@ -119,11 +119,9 @@ async fn worker(
                 break;
             }
             Request::Upload(path) => {
-                if (api.circuit_breaker_tripped()) {
-                  tracing::trace!(
-                    "GitHub Actions gave us a 429, so we're done.",
-                  );
-                  continue;
+                if api.circuit_breaker_tripped() {
+                    tracing::trace!("GitHub Actions gave us a 429, so we're done.",);
+                    continue;
                 }
 
                 if !done.insert(path.clone()) {
@@ -195,7 +193,8 @@ async fn upload_path(
 
     tracing::debug!("Uploading '{}'", narinfo_path);
 
-    api.upload_file(narinfo_allocation, narinfo.as_bytes()).await?;
+    api.upload_file(narinfo_allocation, narinfo.as_bytes())
+        .await?;
 
     metrics.narinfos_uploaded.incr();
 

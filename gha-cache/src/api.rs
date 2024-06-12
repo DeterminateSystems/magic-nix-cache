@@ -276,7 +276,7 @@ impl Api {
     }
 
     pub fn circuit_breaker_tripped(&self) -> bool {
-      self.circuit_breaker_429_tripped.load(Ordering::Relaxed)
+        self.circuit_breaker_429_tripped.load(Ordering::Relaxed)
     }
 
     /// Mutates the cache version/namespace.
@@ -334,9 +334,9 @@ impl Api {
     where
         S: AsyncRead + Unpin + Send,
     {
-      if self.circuit_breaker_tripped() {
-        return Err(Error::CircuitBreakerTripped);
-      }
+        if self.circuit_breaker_tripped() {
+            return Err(Error::CircuitBreakerTripped);
+        }
 
         let mut offset = 0;
         let mut futures = Vec::new();
@@ -395,9 +395,12 @@ impl Api {
 
                     drop(permit);
 
-
-                    if let Err(Error::ApiError{ status: reqwest::StatusCode::TOO_MANY_REQUESTS, info: ref _info }) = r {
-                      circuit_breaker_429_tripped.store(true, Ordering::Relaxed);
+                    if let Err(Error::ApiError {
+                        status: reqwest::StatusCode::TOO_MANY_REQUESTS,
+                        info: ref _info,
+                    }) = r
+                    {
+                        circuit_breaker_429_tripped.store(true, Ordering::Relaxed);
                     }
 
                     r
@@ -421,10 +424,9 @@ impl Api {
 
     /// Downloads a file based on a list of key prefixes.
     pub async fn get_file_url(&self, keys: &[&str]) -> Result<Option<String>> {
-
-      if self.circuit_breaker_tripped() {
-        return Err(Error::CircuitBreakerTripped);
-      }
+        if self.circuit_breaker_tripped() {
+            return Err(Error::CircuitBreakerTripped);
+        }
 
         Ok(self
             .get_cache_entry(keys)
@@ -444,9 +446,9 @@ impl Api {
 
     /// Retrieves a cache based on a list of key prefixes.
     async fn get_cache_entry(&self, keys: &[&str]) -> Result<Option<ArtifactCacheEntry>> {
-      if self.circuit_breaker_tripped() {
-        return Err(Error::CircuitBreakerTripped);
-      }
+        if self.circuit_breaker_tripped() {
+            return Err(Error::CircuitBreakerTripped);
+        }
 
         #[cfg(debug_assertions)]
         self.stats.get.fetch_add(1, Ordering::SeqCst);
@@ -477,10 +479,9 @@ impl Api {
         key: &str,
         cache_size: Option<usize>,
     ) -> Result<ReserveCacheResponse> {
-
-      if self.circuit_breaker_tripped() {
-        return Err(Error::CircuitBreakerTripped);
-      }
+        if self.circuit_breaker_tripped() {
+            return Err(Error::CircuitBreakerTripped);
+        }
 
         tracing::debug!("Reserving cache for {}", key);
 
@@ -507,10 +508,9 @@ impl Api {
 
     /// Finalizes uploading to a cache.
     async fn commit_cache(&self, cache_id: CacheId, size: usize) -> Result<()> {
-
-      if self.circuit_breaker_tripped() {
-        return Err(Error::CircuitBreakerTripped);
-      }
+        if self.circuit_breaker_tripped() {
+            return Err(Error::CircuitBreakerTripped);
+        }
 
         tracing::debug!("Commiting cache {:?}", cache_id);
 

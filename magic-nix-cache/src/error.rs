@@ -10,8 +10,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Error, Debug)]
 pub enum Error {
-  #[error("GitHub API error: {0}")]
-  Api(#[from] gha_cache::api::Error),
+    #[error("GitHub API error: {0}")]
+    Api(#[from] gha_cache::api::Error),
 
     #[error("Not Found")]
     NotFound,
