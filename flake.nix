@@ -43,6 +43,34 @@
         magic-nix-cache = pkgs.callPackage ./package.nix { };
         #inherit (cranePkgs) magic-nix-cache;
         default = magic-nix-cache;
+
+        veryLongChain =
+          let
+            # Function to write the current date to a file
+            startFile =
+              pkgs.stdenv.mkDerivation {
+                name = "start-file";
+                buildCommand = ''
+                  echo ${magic-nix-cache} > $out
+                '';
+              };
+
+            # Recursive function to create a chain of derivations
+            createChain = n: startFile:
+              pkgs.stdenv.mkDerivation {
+                name = "chain-${toString n}";
+                src =
+                  if n == 0 then
+                    startFile
+                  else createChain (n - 1) startFile;
+                buildCommand = ''
+                  echo $src  > $out
+                '';
+              };
+
+          in
+          # Starting point of the chain
+          createChain 1000 startFile;
       });
 
       devShells = forEachSupportedSystem ({ pkgs, cranePkgs, lib }: {
