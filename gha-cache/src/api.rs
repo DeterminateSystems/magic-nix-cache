@@ -281,15 +281,15 @@ impl Api {
     }
 
     fn circuit_breaker_trip_on_429(&self, e: &Error) {
-      if let Error::ApiError {
-        status: reqwest::StatusCode::TOO_MANY_REQUESTS,
-        info: ref _info,
-    } = e
-    {
-        tracing::info!("Disabling GitHub Actions Cache due to 429: Too Many Requests");
-        self.circuit_breaker_429_tripped
-            .store(true, Ordering::Relaxed);
-    }
+        if let Error::ApiError {
+            status: reqwest::StatusCode::TOO_MANY_REQUESTS,
+            info: ref _info,
+        } = e
+        {
+            tracing::info!("Disabling GitHub Actions Cache due to 429: Too Many Requests");
+            self.circuit_breaker_429_tripped
+                .store(true, Ordering::Relaxed);
+        }
     }
 
     /// Mutates the cache version/namespace.
