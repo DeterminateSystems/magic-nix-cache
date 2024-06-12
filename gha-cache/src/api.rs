@@ -280,6 +280,18 @@ impl Api {
         self.circuit_breaker_429_tripped.load(Ordering::Relaxed)
     }
 
+    fn circuit_breaker_trip_on_429(&self, e: &Error) {
+      if let Error::ApiError {
+        status: reqwest::StatusCode::TOO_MANY_REQUESTS,
+        info: ref _info,
+    } = e
+    {
+        tracing::info!("Disabling GitHub Actions Cache due to 429: Too Many Requests");
+        self.circuit_breaker_429_tripped
+            .store(true, Ordering::Relaxed);
+    }
+    }
+
     /// Mutates the cache version/namespace.
     pub fn mutate_version(&mut self, data: &[u8]) {
         self.version_hasher.update(data);
@@ -461,7 +473,8 @@ impl Api {
             .send()
             .await?
             .check_json()
-            .await;
+            .await
+            .inspect_err(|e| self.circuit_breaker_trip_on_429(e));
 
         match res {
             Ok(entry) => Ok(Some(entry)),
@@ -502,7 +515,8 @@ impl Api {
             .send()
             .await?
             .check_json()
-            .await?;
+            .await
+            .inspect_err(|e| self.circuit_breaker_trip_on_429(e))?;
 
         Ok(res)
     }
@@ -526,7 +540,8 @@ impl Api {
             .send()
             .await?
             .check()
-            .await?;
+            .await
+            .inspect_err(|e| self.circuit_breaker_trip_on_429(e))?;
 
         Ok(())
     }
