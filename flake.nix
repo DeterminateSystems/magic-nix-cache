@@ -59,7 +59,11 @@
             bacon
 
             age
-          ];
+          ] ++ lib.optionals pkgs.stdenv.isDarwin (with pkgs.darwin.apple_sdk.frameworks; [
+            SystemConfiguration
+          ]);
+
+          NIX_CFLAGS_LINK = lib.optionalString pkgs.stdenv.isDarwin "-lc++abi";
         };
 
         /*
