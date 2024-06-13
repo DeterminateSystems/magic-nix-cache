@@ -54,7 +54,9 @@ pub enum Error {
     #[error("Failed to initialize the client: {0}")]
     InitError(Box<dyn std::error::Error + Send + Sync>),
 
-    #[error("GitHub Actions Cache throttled Magic Nix Cache. Not trying to use it again on this run.")]
+    #[error(
+        "GitHub Actions Cache throttled Magic Nix Cache. Not trying to use it again on this run."
+    )]
     CircuitBreakerTripped,
 
     #[error("Request error: {0}")]
@@ -280,18 +282,6 @@ impl Api {
         self.circuit_breaker_429_tripped.load(Ordering::Relaxed)
     }
 
-    fn circuit_breaker_trip_on_429(&self, e: &Error) {
-        if let Error::ApiError {
-            status: reqwest::StatusCode::TOO_MANY_REQUESTS,
-            info: ref _info,
-        } = e
-        {
-            tracing::info!("Disabling GitHub Actions Cache due to 429: Too Many Requests");
-            self.circuit_breaker_429_tripped
-                .store(true, Ordering::Relaxed);
-        }
-    }
-
     /// Mutates the cache version/namespace.
     pub fn mutate_version(&mut self, data: &[u8]) {
         self.version_hasher.update(data);
@@ -408,13 +398,7 @@ impl Api {
 
                     drop(permit);
 
-                    if let Err(Error::ApiError {
-                        status: reqwest::StatusCode::TOO_MANY_REQUESTS,
-                        info: ref _info,
-                    }) = r
-                    {
-                        circuit_breaker_429_tripped.store(true, Ordering::Relaxed);
-                    }
+                    circuit_breaker_429_tripped.check_result(&r);
 
                     r
                 })
@@ -475,9 +459,7 @@ impl Api {
             .check_json()
             .await;
 
-        if let Err(ref e) = res {
-            self.circuit_breaker_trip_on_429(e);
-        }
+        self.circuit_breaker_429_tripped.check_result(&res);
 
         match res {
             Ok(entry) => Ok(Some(entry)),
@@ -520,9 +502,7 @@ impl Api {
             .check_json()
             .await;
 
-        if let Err(ref e) = res {
-            self.circuit_breaker_trip_on_429(e);
-        }
+        self.circuit_breaker_429_tripped.check_result(&res);
 
         res
     }
@@ -549,7 +529,7 @@ impl Api {
             .check()
             .await
         {
-            self.circuit_breaker_trip_on_429(&e);
+            self.circuit_breaker_429_tripped.check_err(&e);
             return Err(e);
         }
 
@@ -618,4 +598,28 @@ async fn handle_error(res: reqwest::Response) -> Error {
     };
 
     Error::ApiError { status, info }
+}
+
+trait AtomicCircuitBreaker {
+    fn check_err(&self, e: &Error);
+    fn check_result<T>(&self, r: &std::result::Result<T, Error>);
+}
+
+impl AtomicCircuitBreaker for AtomicBool {
+    fn check_result<T>(&self, r: &std::result::Result<T, Error>) {
+        if let Err(ref e) = r {
+            self.check_err(e)
+        }
+    }
+
+    fn check_err(&self, e: &Error) {
+        if let Error::ApiError {
+            status: reqwest::StatusCode::TOO_MANY_REQUESTS,
+            info: ref _info,
+        } = e
+        {
+            tracing::info!("Disabling GitHub Actions Cache due to 429: Too Many Requests");
+            self.store(true, Ordering::Relaxed);
+        }
+    }
 }
