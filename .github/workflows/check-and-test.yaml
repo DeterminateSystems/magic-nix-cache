@@ -80,4 +80,5 @@ jobs:
           nix develop --command echo "just testing"
       - name: Exhaust our GitHub Actions Cache tokens
         run: |
+          date >> README.md
           nix build .#veryLongChain -v

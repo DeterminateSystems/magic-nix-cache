@@ -46,12 +46,14 @@
 
         veryLongChain =
           let
+            ctx = ./README.md;
+
             # Function to write the current date to a file
             startFile =
               pkgs.stdenv.mkDerivation {
                 name = "start-file";
                 buildCommand = ''
-                  echo ${magic-nix-cache} > $out
+                  cat ${ctx} > $out
                 '';
               };
 
@@ -70,7 +72,7 @@
 
           in
           # Starting point of the chain
-          createChain 1000 startFile;
+          createChain 200 startFile;
       });
 
       devShells = forEachSupportedSystem ({ pkgs, cranePkgs, lib }: {
