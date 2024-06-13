@@ -4,7 +4,8 @@
 
 use std::fmt;
 #[cfg(debug_assertions)]
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -53,6 +54,11 @@ pub enum Error {
     #[error("Failed to initialize the client: {0}")]
     InitError(Box<dyn std::error::Error + Send + Sync>),
 
+    #[error(
+        "GitHub Actions Cache throttled Magic Nix Cache. Not trying to use it again on this run."
+    )]
+    CircuitBreakerTripped,
+
     #[error("Request error: {0}")]
     RequestError(#[from] reqwest::Error), // TODO: Better errors
 
@@ -95,6 +101,8 @@ pub struct Api {
 
     /// The concurrent upload limit.
     concurrency_limit: Arc<Semaphore>,
+
+    circuit_breaker_429_tripped: Arc<AtomicBool>,
 
     /// Backend request statistics.
     #[cfg(debug_assertions)]
@@ -264,9 +272,14 @@ impl Api {
             version_hasher,
             client,
             concurrency_limit: Arc::new(Semaphore::new(MAX_CONCURRENCY)),
+            circuit_breaker_429_tripped: Arc::new(AtomicBool::from(false)),
             #[cfg(debug_assertions)]
             stats: Default::default(),
         })
+    }
+
+    pub fn circuit_breaker_tripped(&self) -> bool {
+        self.circuit_breaker_429_tripped.load(Ordering::Relaxed)
     }
 
     /// Mutates the cache version/namespace.
@@ -324,6 +337,10 @@ impl Api {
     where
         S: AsyncRead + Unpin + Send,
     {
+        if self.circuit_breaker_tripped() {
+            return Err(Error::CircuitBreakerTripped);
+        }
+
         let mut offset = 0;
         let mut futures = Vec::new();
         loop {
@@ -347,6 +364,7 @@ impl Api {
             futures.push({
                 let client = self.client.clone();
                 let concurrency_limit = self.concurrency_limit.clone();
+                let circuit_breaker_429_tripped = self.circuit_breaker_429_tripped.clone();
                 let url = self.construct_url(&format!("caches/{}", allocation.0 .0));
 
                 tokio::task::spawn(async move {
@@ -380,6 +398,8 @@ impl Api {
 
                     drop(permit);
 
+                    circuit_breaker_429_tripped.check_result(&r);
+
                     r
                 })
             });
@@ -401,6 +421,10 @@ impl Api {
 
     /// Downloads a file based on a list of key prefixes.
     pub async fn get_file_url(&self, keys: &[&str]) -> Result<Option<String>> {
+        if self.circuit_breaker_tripped() {
+            return Err(Error::CircuitBreakerTripped);
+        }
+
         Ok(self
             .get_cache_entry(keys)
             .await?
@@ -419,6 +443,10 @@ impl Api {
 
     /// Retrieves a cache based on a list of key prefixes.
     async fn get_cache_entry(&self, keys: &[&str]) -> Result<Option<ArtifactCacheEntry>> {
+        if self.circuit_breaker_tripped() {
+            return Err(Error::CircuitBreakerTripped);
+        }
+
         #[cfg(debug_assertions)]
         self.stats.get.fetch_add(1, Ordering::SeqCst);
 
@@ -430,6 +458,8 @@ impl Api {
             .await?
             .check_json()
             .await;
+
+        self.circuit_breaker_429_tripped.check_result(&res);
 
         match res {
             Ok(entry) => Ok(Some(entry)),
@@ -448,6 +478,10 @@ impl Api {
         key: &str,
         cache_size: Option<usize>,
     ) -> Result<ReserveCacheResponse> {
+        if self.circuit_breaker_tripped() {
+            return Err(Error::CircuitBreakerTripped);
+        }
+
         tracing::debug!("Reserving cache for {}", key);
 
         let req = ReserveCacheRequest {
@@ -466,13 +500,19 @@ impl Api {
             .send()
             .await?
             .check_json()
-            .await?;
+            .await;
 
-        Ok(res)
+        self.circuit_breaker_429_tripped.check_result(&res);
+
+        res
     }
 
     /// Finalizes uploading to a cache.
     async fn commit_cache(&self, cache_id: CacheId, size: usize) -> Result<()> {
+        if self.circuit_breaker_tripped() {
+            return Err(Error::CircuitBreakerTripped);
+        }
+
         tracing::debug!("Commiting cache {:?}", cache_id);
 
         let req = CommitCacheRequest { size };
@@ -480,13 +520,18 @@ impl Api {
         #[cfg(debug_assertions)]
         self.stats.post.fetch_add(1, Ordering::SeqCst);
 
-        self.client
+        if let Err(e) = self
+            .client
             .post(self.construct_url(&format!("caches/{}", cache_id.0)))
             .json(&req)
             .send()
             .await?
             .check()
-            .await?;
+            .await
+        {
+            self.circuit_breaker_429_tripped.check_err(&e);
+            return Err(e);
+        }
 
         Ok(())
     }
@@ -553,4 +598,28 @@ async fn handle_error(res: reqwest::Response) -> Error {
     };
 
     Error::ApiError { status, info }
+}
+
+trait AtomicCircuitBreaker {
+    fn check_err(&self, e: &Error);
+    fn check_result<T>(&self, r: &std::result::Result<T, Error>);
+}
+
+impl AtomicCircuitBreaker for AtomicBool {
+    fn check_result<T>(&self, r: &std::result::Result<T, Error>) {
+        if let Err(ref e) = r {
+            self.check_err(e)
+        }
+    }
+
+    fn check_err(&self, e: &Error) {
+        if let Error::ApiError {
+            status: reqwest::StatusCode::TOO_MANY_REQUESTS,
+            info: ref _info,
+        } = e
+        {
+            tracing::info!("Disabling GitHub Actions Cache due to 429: Too Many Requests");
+            self.store(true, Ordering::Relaxed);
+        }
+    }
 }
