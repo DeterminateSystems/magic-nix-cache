@@ -54,7 +54,7 @@ pub enum Error {
     #[error("Failed to initialize the client: {0}")]
     InitError(Box<dyn std::error::Error + Send + Sync>),
 
-    #[error("Circuit breaker tripped.")]
+    #[error("GitHub Actions Cache throttled Magic Nix Cache. Not trying to use it again on this run.")]
     CircuitBreakerTripped,
 
     #[error("Request error: {0}")]
