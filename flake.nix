@@ -43,6 +43,36 @@
         magic-nix-cache = pkgs.callPackage ./package.nix { };
         #inherit (cranePkgs) magic-nix-cache;
         default = magic-nix-cache;
+
+        veryLongChain =
+          let
+            ctx = ./README.md;
+
+            # Function to write the current date to a file
+            startFile =
+              pkgs.stdenv.mkDerivation {
+                name = "start-file";
+                buildCommand = ''
+                  cat ${ctx} > $out
+                '';
+              };
+
+            # Recursive function to create a chain of derivations
+            createChain = n: startFile:
+              pkgs.stdenv.mkDerivation {
+                name = "chain-${toString n}";
+                src =
+                  if n == 0 then
+                    startFile
+                  else createChain (n - 1) startFile;
+                buildCommand = ''
+                  echo $src  > $out
+                '';
+              };
+
+          in
+          # Starting point of the chain
+          createChain 200 startFile;
       });
 
       devShells = forEachSupportedSystem ({ pkgs, cranePkgs, lib }: {
@@ -56,10 +86,15 @@
             cargo-bloat
             cargo-edit
             cargo-udeps
+            cargo-watch
             bacon
 
             age
-          ];
+          ] ++ lib.optionals pkgs.stdenv.isDarwin (with pkgs.darwin.apple_sdk.frameworks; [
+            SystemConfiguration
+          ]);
+
+          NIX_CFLAGS_LINK = lib.optionalString pkgs.stdenv.isDarwin "-lc++abi";
         };
 
         /*
