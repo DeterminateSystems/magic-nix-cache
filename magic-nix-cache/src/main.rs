@@ -241,7 +241,9 @@ async fn main_cli() -> Result<()> {
             }
         }
     } else {
-        tracing::info!("FlakeHub cache is disabled.");
+        tracing::info!(
+            "FlakeHub cache is disabled, as the `use-flakehub` setting is set to `false`."
+        );
         None
     };
 
