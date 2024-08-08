@@ -147,7 +147,7 @@ async fn post_enqueue_paths(
     Ok(Json(EnqueuePathsResponse {}))
 }
 
-async fn enqueue_paths(state: &State, store_paths: Vec<StorePath>) -> Result<()> {
+pub async fn enqueue_paths(state: &State, store_paths: Vec<StorePath>) -> Result<()> {
     if let Some(gha_cache) = &state.gha_cache {
         gha_cache
             .enqueue_paths(state.store.clone(), store_paths.clone())
