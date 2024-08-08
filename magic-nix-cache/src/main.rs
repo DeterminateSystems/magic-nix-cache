@@ -31,11 +31,16 @@ use std::sync::Arc;
 
 use ::attic::nix_store::NixStore;
 use anyhow::{anyhow, Context, Result};
+use axum::body::Body;
 use axum::{extract::Extension, routing::get, Router};
 use clap::Parser;
+use http_body_util::BodyExt;
+use hyper_util::rt::{TokioExecutor, TokioIo};
+use futures::StreamExt;
 use tempfile::NamedTempFile;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
+use tokio::net::UnixStream;
 use tokio::process::Command;
 use tokio::sync::{oneshot, Mutex, RwLock};
 use tracing_subscriber::filter::EnvFilter;
@@ -43,6 +48,9 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 use gha_cache::Credentials;
+
+const DETERMINATE_STATE_DIR: &str = "/nix/var/determinate";
+const DETERMINATE_NIXD_SOCKET_NAME: &str = "determinate-nixd.socket";
 
 type State = Arc<StateInner>;
 
@@ -292,65 +300,116 @@ async fn main_cli() -> Result<()> {
         None
     };
 
-    /* Write the post-build hook script. Note that the shell script
-     * ignores errors, to avoid the Nix build from failing. */
-    let post_build_hook_script = {
-        let mut file = NamedTempFile::with_prefix("magic-nix-cache-build-hook-")
-            .with_context(|| "Creating a temporary file for the post-build hook")?;
-        file.write_all(
-            format!(
-                // NOTE(cole-h): We want to exit 0 even if the hook failed, otherwise it'll fail the
-                // build itself
-                "#! /bin/sh\nRUST_LOG=trace RUST_BACKTRACE=full {} --server {} || :\n",
-                std::env::current_exe()
-                    .with_context(|| "Getting the path of magic-nix-cache")?
-                    .display(),
-                args.listen
-            )
-            .as_bytes(),
-        )
-        .with_context(|| "Writing the post-build hook")?;
-        let path = file
-            .keep()
-            .with_context(|| "Keeping the post-build hook")?
-            .1;
+    let dnixd_uds_socket_dir: &Path = Path::new(&DETERMINATE_STATE_DIR);
+    let dnixd_uds_socket_path = dnixd_uds_socket_dir.join(DETERMINATE_NIXD_SOCKET_NAME);
 
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
-            .with_context(|| "Setting permissions on the post-build hook")?;
+    if dnixd_uds_socket_path.exists() {
+        let stream = TokioIo::new(UnixStream::connect(dnixd_uds_socket_path).await?);
+        // let (mut sender, conn): (SendRequest<Body>, _) =
+        //     hyper::client::conn::http1::handshake(stream).await?;
 
-        /* Copy the script to the Nix store so we know for sure that
-         * it's accessible to the Nix daemon, which might have a
-         * different /tmp from us. */
-        let res = Command::new("nix")
-            .args([
-                "--extra-experimental-features",
-                "nix-command",
-                "store",
-                "add-path",
-                &path.display().to_string(),
-            ])
-            .output()
-            .await?;
-        if res.status.success() {
-            tokio::fs::remove_file(path).await?;
-            PathBuf::from(String::from_utf8_lossy(&res.stdout).trim())
-        } else {
-            path
+        let executor = TokioExecutor::new();
+        let (mut sender, conn): (hyper::client::conn::http2::SendRequest<Body>, _) =
+            hyper::client::conn::http2::handshake(executor, stream)
+                .await
+                .unwrap();
+
+        // NOTE(colemickens): for now we just drop the joinhandle and let it keep running
+        let _join_handle = tokio::task::spawn(async move {
+            if let Err(err) = conn.await {
+                tracing::error!("Connection failed: {:?}", err);
+            }
+        });
+
+        let request = http::Request::builder()
+            .method(http::Method::GET)
+            .uri("http://localhost/built-paths")
+            .body(axum::body::Body::empty())?;
+
+        let response = sender.send_request(request).await?;
+
+        // NOTE(to self): there was a note somewhere to use this _IF_ you wanted all data, including trialers etc
+        // so ... we'll see..
+        let mut data = response.into_data_stream();
+
+        while let Some(foo) = data.next().await {
+            tracing::info!("got {:?}", foo);
         }
-    };
+        
+        // while let Some(frame_result) = response.frame().await {
+        //     let frame = frame_result?;
 
-    /* Update nix.conf. */
-    nix_conf
-        .write_all(
-            format!(
-                "fallback = true\npost-build-hook = {}\n",
-                post_build_hook_script.display()
+        //     if let Some(segment) = frame.data_ref() {
+        //         tokio::io::stdout()
+        //             .write_all(segment.iter().as_slice())
+        //             .await?;
+        //     }
+        // }
+
+        // TODO: do something with these paths
+    } else {
+        // TODO: split into own function(s)
+
+        /* Write the post-build hook script. Note that the shell script
+         * ignores errors, to avoid the Nix build from failing. */
+        let post_build_hook_script = {
+            let mut file = NamedTempFile::with_prefix("magic-nix-cache-build-hook-")
+                .with_context(|| "Creating a temporary file for the post-build hook")?;
+            file.write_all(
+                format!(
+                    // NOTE(cole-h): We want to exit 0 even if the hook failed, otherwise it'll fail the
+                    // build itself
+                    "#! /bin/sh\nRUST_LOG=trace RUST_BACKTRACE=full {} --server {} || :\n",
+                    std::env::current_exe()
+                        .with_context(|| "Getting the path of magic-nix-cache")?
+                        .display(),
+                    args.listen
+                )
+                .as_bytes(),
             )
-            .as_bytes(),
-        )
-        .with_context(|| "Writing to nix.conf")?;
+            .with_context(|| "Writing the post-build hook")?;
+            let path = file
+                .keep()
+                .with_context(|| "Keeping the post-build hook")?
+                .1;
 
-    drop(nix_conf);
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+                .with_context(|| "Setting permissions on the post-build hook")?;
+
+            /* Copy the script to the Nix store so we know for sure that
+             * it's accessible to the Nix daemon, which might have a
+             * different /tmp from us. */
+            let res = Command::new("nix")
+                .args([
+                    "--extra-experimental-features",
+                    "nix-command",
+                    "store",
+                    "add-path",
+                    &path.display().to_string(),
+                ])
+                .output()
+                .await?;
+            if res.status.success() {
+                tokio::fs::remove_file(path).await?;
+                PathBuf::from(String::from_utf8_lossy(&res.stdout).trim())
+            } else {
+                path
+            }
+        };
+
+        /* Update nix.conf. */
+        nix_conf
+            .write_all(
+                format!(
+                    "fallback = true\npost-build-hook = {}\n",
+                    post_build_hook_script.display()
+                )
+                .as_bytes(),
+            )
+            .with_context(|| "Writing to nix.conf")?;
+
+        drop(nix_conf);
+    }
 
     let diagnostic_endpoint = match args.diagnostic_endpoint.as_str() {
         "" => {
