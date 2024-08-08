@@ -373,6 +373,8 @@ async fn main_cli() -> Result<()> {
                 // TODO: hacky, could be better
                 continue
             }
+            // TOOD: another sorta hack
+            let event_str = event_str.strip_prefix("data: ".as_bytes()).unwrap(); // TODO: omg
             let event: BuiltPathResponseEventV1 = serde_json::from_slice(&event_str)?;
 
             // TODO(colemickens): error handling:::
