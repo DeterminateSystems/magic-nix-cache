@@ -31,11 +31,17 @@ use std::sync::Arc;
 
 use ::attic::nix_store::NixStore;
 use anyhow::{anyhow, Context, Result};
+use axum::body::Body;
 use axum::{extract::Extension, routing::get, Router};
 use clap::Parser;
+use http_body_util::BodyExt;
+use hyper_util::rt::{TokioExecutor, TokioIo};
+use futures::StreamExt;
+use serde::{Deserialize,Serialize};
 use tempfile::NamedTempFile;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
+use tokio::net::UnixStream;
 use tokio::process::Command;
 use tokio::sync::{oneshot, Mutex, RwLock};
 use tracing_subscriber::filter::EnvFilter;
@@ -43,6 +49,18 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 use gha_cache::Credentials;
+
+const DETERMINATE_STATE_DIR: &str = "/nix/var/determinate";
+const DETERMINATE_NIXD_SOCKET_NAME: &str = "determinate-nixd.socket";
+
+
+// TODO(colemickens): refactor, move with other UDS stuff (or all PBH stuff) to new file
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "c", rename_all = "kebab-case")]
+pub struct BuiltPathResponseEventV1 {
+    pub drv: PathBuf,
+    pub outputs: Vec<PathBuf>,
+}
 
 type State = Arc<StateInner>;
 
@@ -292,66 +310,6 @@ async fn main_cli() -> Result<()> {
         None
     };
 
-    /* Write the post-build hook script. Note that the shell script
-     * ignores errors, to avoid the Nix build from failing. */
-    let post_build_hook_script = {
-        let mut file = NamedTempFile::with_prefix("magic-nix-cache-build-hook-")
-            .with_context(|| "Creating a temporary file for the post-build hook")?;
-        file.write_all(
-            format!(
-                // NOTE(cole-h): We want to exit 0 even if the hook failed, otherwise it'll fail the
-                // build itself
-                "#! /bin/sh\nRUST_LOG=trace RUST_BACKTRACE=full {} --server {} || :\n",
-                std::env::current_exe()
-                    .with_context(|| "Getting the path of magic-nix-cache")?
-                    .display(),
-                args.listen
-            )
-            .as_bytes(),
-        )
-        .with_context(|| "Writing the post-build hook")?;
-        let path = file
-            .keep()
-            .with_context(|| "Keeping the post-build hook")?
-            .1;
-
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
-            .with_context(|| "Setting permissions on the post-build hook")?;
-
-        /* Copy the script to the Nix store so we know for sure that
-         * it's accessible to the Nix daemon, which might have a
-         * different /tmp from us. */
-        let res = Command::new("nix")
-            .args([
-                "--extra-experimental-features",
-                "nix-command",
-                "store",
-                "add-path",
-                &path.display().to_string(),
-            ])
-            .output()
-            .await?;
-        if res.status.success() {
-            tokio::fs::remove_file(path).await?;
-            PathBuf::from(String::from_utf8_lossy(&res.stdout).trim())
-        } else {
-            path
-        }
-    };
-
-    /* Update nix.conf. */
-    nix_conf
-        .write_all(
-            format!(
-                "fallback = true\npost-build-hook = {}\n",
-                post_build_hook_script.display()
-            )
-            .as_bytes(),
-        )
-        .with_context(|| "Writing to nix.conf")?;
-
-    drop(nix_conf);
-
     let diagnostic_endpoint = match args.diagnostic_endpoint.as_str() {
         "" => {
             tracing::info!("Diagnostics disabled.");
@@ -374,6 +332,122 @@ async fn main_cli() -> Result<()> {
         logfile: guard.logfile,
         original_paths,
     });
+
+    let dnixd_uds_socket_dir: &Path = Path::new(&DETERMINATE_STATE_DIR);
+    let dnixd_uds_socket_path = dnixd_uds_socket_dir.join(DETERMINATE_NIXD_SOCKET_NAME);
+
+    if dnixd_uds_socket_path.exists() {
+        let stream = TokioIo::new(UnixStream::connect(dnixd_uds_socket_path).await?);
+       
+        // TODO(colemickens): loop retry/reconnect/etc
+
+        let executor = TokioExecutor::new();
+        let (mut sender, conn): (hyper::client::conn::http2::SendRequest<Body>, _) =
+            hyper::client::conn::http2::handshake(executor, stream)
+                .await
+                .unwrap();
+
+        // NOTE(colemickens): for now we just drop the joinhandle and let it keep running
+        let _join_handle = tokio::task::spawn(async move {
+            if let Err(err) = conn.await {
+                tracing::error!("Connection failed: {:?}", err);
+            }
+        });
+
+        let request = http::Request::builder()
+            .method(http::Method::GET)
+            .uri("http://localhost/built-paths")
+            .body(axum::body::Body::empty())?;
+
+        let response = sender.send_request(request).await?;
+        let mut data = response.into_data_stream();
+
+        while let Some(event_str) = data.next().await {
+            tracing::info!("got {:?}", event_str);
+            // TOOD: skip our keep-alive, maybe we should set it, we rely on the axum default "\n\n" right now
+            // but we need to skip those lines, anyway, and not bother trying to parse them
+
+            // TODO(colemickens): error handle
+            let event_str = event_str.unwrap();
+            if event_str == "\n\n" {
+                // TODO: hacky, could be better
+                continue
+            }
+            // TOOD: another sorta hack
+            let event_str = event_str.strip_prefix("data: ".as_bytes()).unwrap(); // TODO: omg
+            let event: BuiltPathResponseEventV1 = serde_json::from_slice(&event_str)?;
+
+            // TODO(colemickens): error handling:::
+            let store_paths = event.outputs
+                .iter()
+                .map(|path| state.store.follow_store_path(path).map_err(|_| anyhow!("ahhhhh")))
+                .collect::<Result<Vec<_>>>()?;
+            
+            crate::api::enqueue_paths(&state, store_paths).await?;
+        }
+    } else {
+        // TODO: split into own function(s)
+
+        /* Write the post-build hook script. Note that the shell script
+         * ignores errors, to avoid the Nix build from failing. */
+        let post_build_hook_script = {
+            let mut file = NamedTempFile::with_prefix("magic-nix-cache-build-hook-")
+                .with_context(|| "Creating a temporary file for the post-build hook")?;
+            file.write_all(
+                format!(
+                    // NOTE(cole-h): We want to exit 0 even if the hook failed, otherwise it'll fail the
+                    // build itself
+                    "#! /bin/sh\nRUST_LOG=trace RUST_BACKTRACE=full {} --server {} || :\n",
+                    std::env::current_exe()
+                        .with_context(|| "Getting the path of magic-nix-cache")?
+                        .display(),
+                    args.listen
+                )
+                .as_bytes(),
+            )
+            .with_context(|| "Writing the post-build hook")?;
+            let path = file
+                .keep()
+                .with_context(|| "Keeping the post-build hook")?
+                .1;
+
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+                .with_context(|| "Setting permissions on the post-build hook")?;
+
+            /* Copy the script to the Nix store so we know for sure that
+             * it's accessible to the Nix daemon, which might have a
+             * different /tmp from us. */
+            let res = Command::new("nix")
+                .args([
+                    "--extra-experimental-features",
+                    "nix-command",
+                    "store",
+                    "add-path",
+                    &path.display().to_string(),
+                ])
+                .output()
+                .await?;
+            if res.status.success() {
+                tokio::fs::remove_file(path).await?;
+                PathBuf::from(String::from_utf8_lossy(&res.stdout).trim())
+            } else {
+                path
+            }
+        };
+
+        /* Update nix.conf. */
+        nix_conf
+            .write_all(
+                format!(
+                    "fallback = true\npost-build-hook = {}\n",
+                    post_build_hook_script.display()
+                )
+                .as_bytes(),
+            )
+            .with_context(|| "Writing to nix.conf")?;
+
+        drop(nix_conf);
+    }
 
     let app = Router::new()
         .route("/", get(root))
