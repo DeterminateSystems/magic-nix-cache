@@ -37,6 +37,7 @@ use clap::Parser;
 use http_body_util::BodyExt;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use futures::StreamExt;
+use serde::{Deserialize,Serialize};
 use tempfile::NamedTempFile;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -51,6 +52,15 @@ use gha_cache::Credentials;
 
 const DETERMINATE_STATE_DIR: &str = "/nix/var/determinate";
 const DETERMINATE_NIXD_SOCKET_NAME: &str = "determinate-nixd.socket";
+
+
+// TODO(colemickens): refactor, move with other UDS stuff (or all PBH stuff) to new file
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "c", rename_all = "kebab-case")]
+pub struct BuiltPathResponseEventV1 {
+    pub drv: PathBuf,
+    pub outputs: Vec<PathBuf>,
+}
 
 type State = Arc<StateInner>;
 
@@ -352,15 +362,21 @@ async fn main_cli() -> Result<()> {
         let response = sender.send_request(request).await?;
         let mut data = response.into_data_stream();
 
-        while let Some(foo) = data.next().await {
-            tracing::info!("got {:?}", foo);
+        while let Some(event_str) = data.next().await {
+            tracing::info!("got {:?}", event_str);
+            // TOOD: skip our keep-alive, maybe we should set it, we rely on the axum default "\n\n" right now
+            // but we need to skip those lines, anyway, and not bother trying to parse them
 
-
-            let sp  = String::from_utf8_lossy(&foo.unwrap()).to_string();
-            let store_paths = vec![sp];
+            // TODO(colemickens): error handle
+            let event_str = event_str.unwrap();
+            if event_str == "\n\n" {
+                // TODO: hacky, could be better
+                continue
+            }
+            let event: BuiltPathResponseEventV1 = serde_json::from_slice(&event_str)?;
 
             // TODO(colemickens): error handling:::
-            let store_paths = store_paths
+            let store_paths = event.outputs
                 .iter()
                 .map(|path| state.store.follow_store_path(path).map_err(|_| anyhow!("ahhhhh")))
                 .collect::<Result<Vec<_>>>()?;
