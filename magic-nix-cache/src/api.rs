@@ -4,7 +4,6 @@
 
 use attic::nix_store::StorePath;
 use axum::{extract::Extension, routing::post, Json, Router};
-use axum_macros::debug_handler;
 use serde::{Deserialize, Serialize};
 
 use super::State;
@@ -30,7 +29,6 @@ pub fn get_router() -> Router {
 }
 
 /// Record existing paths.
-#[debug_handler]
 async fn workflow_start(Extension(state): Extension<State>) -> Result<Json<WorkflowStartResponse>> {
     tracing::info!("Workflow started");
     let reply = if let Some(original_paths) = &state.original_paths {
