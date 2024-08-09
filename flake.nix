@@ -5,21 +5,21 @@
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.2311.tar.gz";
 
     fenix = {
-      url = "https://flakehub.com/f/nix-community/fenix/0.1.1584.tar.gz";
+      url = "https://flakehub.com/f/nix-community/fenix/0.1.1727.tar.gz";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    naersk = {
-      url = "github:nix-community/naersk";
+    crane = {
+      url = "https://flakehub.com/f/ipetkov/crane/0.16.3.tar.gz";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     flake-compat.url = "https://flakehub.com/f/edolstra/flake-compat/1.0.1.tar.gz";
 
-    nix.url = "https://flakehub.com/f/NixOS/nix/~2.22.1.tar.gz";
+    nix.url = "https://flakehub.com/f/NixOS/nix/=2.22.1.tar.gz";
   };
 
-  outputs = { self, nixpkgs, fenix, naersk, nix, ... }@inputs:
+  outputs = { self, nixpkgs, fenix, crane, ... }@inputs:
     let
       supportedSystems = [
         "aarch64-linux"
@@ -28,13 +28,17 @@
         "x86_64-darwin"
       ];
 
-      forAllSystems = f: nixpkgs.lib.genAttrs supportedSystems (system: (forSystem system f));
-
-      forSystem = system: f: f rec {
+      forEachSupportedSystem = f: nixpkgs.lib.genAttrs supportedSystems (system: f rec {
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [
+            inputs.nix.overlays.default
+            self.overlays.default
+          ];
+        };
+        inherit (pkgs) lib;
         inherit system;
-        pkgs = import nixpkgs { inherit system; overlays = [ /* self.overlays.default */ nix.overlays.default ]; };
-        lib = pkgs.lib;
-      };
+      });
 
       fenixToolchain = system: with fenix.packages.${system};
         combine ([
@@ -50,35 +54,47 @@
         ]);
     in
     {
-      packages = forAllSystems ({ lib, system, pkgs, ... }: let
-          toolchain = fenixToolchain pkgs.stdenv.system;
-          naerskLib = pkgs.callPackage naersk {
-            cargo = toolchain;
-            rustc = toolchain;
-          };
-      in {
-        magic-nix-cache = naerskLib.buildPackage {
-          pname = "magic-nix-cache";
-          version = (builtins.fromTOML (builtins.readFile ./magic-nix-cache/Cargo.toml)).package.version;
-          src = builtins.path {
-            name = "magic-nix-cache-source";
-            path = self;
-            filter = (path: type: baseNameOf path != "nix" && baseNameOf path != ".github");
+
+      overlays.default = final: prev:
+      let
+          toolchain = fenixToolchain final.hostPlatform.system;
+          craneLib = (crane.mkLib final).overrideToolchain toolchain;
+          crateName = craneLib.crateNameFromCargoToml {
+            cargoToml = ./magic-nix-cache/Cargo.toml;
           };
 
-          nativeBuildInputs = [ pkgs.pkg-config ];
-          buildInputs = [ pkgs.nix
-              pkgs.boost # needed for clippy
-            ]
-            ++ lib.optionals pkgs.stdenv.isDarwin [
-            pkgs.darwin.apple_sdk.frameworks.Security
-            pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
-            (pkgs.libiconv.override { enableStatic = true; enableShared = false; })
-          ];
+          commonArgs = {
+            inherit (crateName) pname version;
+            src = self;
 
-          NIX_CFLAGS_LINK = lib.optionalString pkgs.stdenv.isDarwin "-lc++abi";
-        };
-        default = self.packages.${system}.magic-nix-cache;
+            nativeBuildInputs = with final; [
+              pkg-config
+            ];
+
+            buildInputs = [
+              final.nix
+              final.boost
+            ] ++ final.lib.optionals final.stdenv.isDarwin [
+              final.darwin.apple_sdk.frameworks.SystemConfiguration
+              (final.libiconv.override { enableStatic = true; enableShared = false; })
+            ];
+
+            NIX_CFLAGS_LINK = final.lib.optionalString final.stdenv.isDarwin "-lc++abi";
+          };
+
+          cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+      in
+      rec {
+        magic-nix-cache = craneLib.buildPackage (commonArgs // {
+          inherit cargoArtifacts;
+        });
+
+        default = magic-nix-cache;
+      };
+
+      packages = forEachSupportedSystem ({ pkgs, ... }: rec {
+        magic-nix-cache = pkgs.magic-nix-cache;
+        default = magic-nix-cache;
 
         veryLongChain =
           let
@@ -110,12 +126,36 @@
           # Starting point of the chain
           createChain 200 startFile;
       });
-            devShells = forAllSystems ({ lib, system, pkgs, ... }: let
-        pkg = self.packages.${system}.default;
-      in {
+
+      devShells = forEachSupportedSystem ({ system, pkgs, lib }:
+      let
+          toolchain = fenixToolchain system;
+      in
+      {
         default = pkgs.mkShell {
-          inherit (pkg) buildInputs nativeBuildInputs NIX_CFLAGS_LINK;
-      };
-    });
+          packages = with pkgs; [
+            toolchain
+
+            nix # for linking attic
+            boost # for linking attic
+            bashInteractive
+            pkg-config
+
+            cargo-bloat
+            cargo-edit
+            cargo-udeps
+            cargo-watch
+            bacon
+
+            age
+          ] ++ lib.optionals pkgs.stdenv.isDarwin [
+            libiconv
+            darwin.apple_sdk.frameworks.SystemConfiguration
+          ];
+
+          NIX_CFLAGS_LINK = lib.optionalString pkgs.stdenv.isDarwin "-lc++abi";
+          RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";
+        };
+      });
     };
 }
