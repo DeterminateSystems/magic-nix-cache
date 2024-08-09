@@ -363,18 +363,15 @@ async fn main_cli() -> Result<()> {
         let mut data = response.into_data_stream();
 
         while let Some(event_str) = data.next().await {
-            tracing::info!("got {:?}", event_str);
-            // TOOD: skip our keep-alive, maybe we should set it, we rely on the axum default "\n\n" right now
-            // but we need to skip those lines, anyway, and not bother trying to parse them
+            let event_str = event_str.unwrap(); // TODO(colemickens): error handle
 
-            // TODO(colemickens): error handle
-            let event_str = event_str.unwrap();
-            if event_str == "\n\n" {
-                // TODO: hacky, could be better
-                continue
-            }
-            // TOOD: another sorta hack
-            let event_str = event_str.strip_prefix("data: ".as_bytes()).unwrap(); // TODO: omg
+            let event_str = match event_str.strip_prefix("data: ".as_bytes()) {
+                Some(s) => s,
+                None => {
+                    tracing::debug!("built-paths subscription: ignoring non-data frame");
+                    continue;
+                },
+            };
             let event: BuiltPathResponseEventV1 = serde_json::from_slice(&event_str)?;
 
             // TODO(colemickens): error handling:::
@@ -382,7 +379,8 @@ async fn main_cli() -> Result<()> {
                 .iter()
                 .map(|path| state.store.follow_store_path(path).map_err(|_| anyhow!("ahhhhh")))
                 .collect::<Result<Vec<_>>>()?;
-            
+
+            tracing::debug!("about to enqueue paths: {:?}", store_paths);
             crate::api::enqueue_paths(&state, store_paths).await?;
         }
     } else {
