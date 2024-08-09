@@ -430,8 +430,8 @@ async fn main_cli() -> Result<()> {
         tracing::debug!("Created startup notification file at {startup_notification_file_path:?}");
     }
 
-    let ret = axum::Server::bind(&args.listen)
-        .serve(app.into_make_service())
+    let listener = tokio::net::TcpListener::bind(&args.listen).await?;
+    let ret = axum::serve(listener, app.into_make_service())
         .with_graceful_shutdown(async move {
             shutdown_receiver.await.ok();
             tracing::info!("Shutting down");
@@ -568,10 +568,10 @@ fn init_logging() -> Result<LogGuard> {
 }
 
 #[cfg(debug_assertions)]
-async fn dump_api_stats<B>(
+async fn dump_api_stats(
     Extension(state): Extension<State>,
-    request: axum::http::Request<B>,
-    next: axum::middleware::Next<B>,
+    request: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
 ) -> axum::response::Response {
     if let Some(gha_cache) = &state.gha_cache {
         gha_cache.api.dump_stats();
