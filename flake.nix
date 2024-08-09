@@ -47,6 +47,7 @@
           stable.cargo
           stable.rustfmt
           stable.rust-src
+          stable.rust-analyzer
         ] ++ nixpkgs.lib.optionals (system == "x86_64-linux") [
           targets.x86_64-unknown-linux-musl.stable.rust-std
         ] ++ nixpkgs.lib.optionals (system == "aarch64-linux") [
