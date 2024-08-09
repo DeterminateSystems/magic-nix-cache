@@ -1,14 +1,12 @@
 //! Binary Cache API.
 
-use std::io;
-
 use axum::{
-    extract::{BodyStream, Extension, Path},
+    extract::{Extension, Path},
     response::Redirect,
     routing::{get, put},
     Router,
 };
-use tokio_stream::StreamExt;
+use futures::StreamExt as _;
 use tokio_util::io::StreamReader;
 
 use super::State;
@@ -79,7 +77,7 @@ async fn get_narinfo(
 async fn put_narinfo(
     Extension(state): Extension<State>,
     Path(path): Path<String>,
-    body: BodyStream,
+    body: axum::body::Body,
 ) -> Result<()> {
     let components: Vec<&str> = path.splitn(2, '.').collect();
 
@@ -96,9 +94,13 @@ async fn put_narinfo(
     let store_path_hash = components[0].to_string();
     let key = format!("{}.narinfo", store_path_hash);
     let allocation = gha_cache.api.allocate_file_with_random_suffix(&key).await?;
+
+    let body_stream = body.into_data_stream();
     let stream = StreamReader::new(
-        body.map(|r| r.map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))),
+        body_stream
+            .map(|r| r.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))),
     );
+
     gha_cache.api.upload_file(allocation, stream).await?;
     state.metrics.narinfos_uploaded.incr();
 
@@ -135,7 +137,7 @@ async fn get_nar(Extension(state): Extension<State>, Path(path): Path<String>) -
 async fn put_nar(
     Extension(state): Extension<State>,
     Path(path): Path<String>,
-    body: BodyStream,
+    body: axum::body::Body,
 ) -> Result<()> {
     let gha_cache = state.gha_cache.as_ref().ok_or(Error::GHADisabled)?;
 
@@ -143,9 +145,13 @@ async fn put_nar(
         .api
         .allocate_file_with_random_suffix(&path)
         .await?;
+
+    let body_stream = body.into_data_stream();
     let stream = StreamReader::new(
-        body.map(|r| r.map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))),
+        body_stream
+            .map(|r| r.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))),
     );
+
     gha_cache.api.upload_file(allocation, stream).await?;
     state.metrics.nars_uploaded.incr();
 
