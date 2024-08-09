@@ -74,7 +74,6 @@ async fn get_narinfo(
     pull_through(&state, &path)
 }
 
-#[axum::debug_handler]
 async fn put_narinfo(
     Extension(state): Extension<State>,
     Path(path): Path<String>,
