@@ -26,24 +26,16 @@ use std::collections::HashSet;
 use std::fs::{self, create_dir_all};
 use std::io::Write;
 use std::net::SocketAddr;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ::attic::nix_store::NixStore;
 use anyhow::{anyhow, Context, Result};
-use axum::body::Body;
 use axum::{extract::Extension, routing::get, Router};
 use clap::Parser;
-use futures::StreamExt;
-use http_body_util::BodyExt;
-use hyper_util::rt::{TokioExecutor, TokioIo};
 use serde::{Deserialize, Serialize};
-use tempfile::NamedTempFile;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
-use tokio::net::UnixStream;
-use tokio::process::Command;
 use tokio::sync::{oneshot, Mutex, RwLock};
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -337,7 +329,7 @@ async fn main_cli() -> Result<()> {
     let dnixd_uds_socket_path = dnixd_uds_socket_dir.join(DETERMINATE_NIXD_SOCKET_NAME);
 
     if dnixd_uds_socket_path.exists() {
-        crate::pbh::subscribe_uds_post_build_hook(&dnixd_uds_socket_path, state.clone()).await?;
+        crate::pbh::subscribe_uds_post_build_hook(dnixd_uds_socket_path, state.clone()).await?;
     } else {
         crate::pbh::setup_legacy_post_build_hook(&args.listen, &mut nix_conf).await?;
     }
