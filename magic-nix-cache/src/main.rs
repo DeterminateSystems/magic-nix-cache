@@ -21,8 +21,9 @@ mod gha;
 mod telemetry;
 mod util;
 
+use std::borrow::BorrowMut;
 use std::collections::HashSet;
-use std::fs::{self, create_dir_all};
+use std::fs::Permissions;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
@@ -34,7 +35,7 @@ use anyhow::{anyhow, Context, Result};
 use axum::{extract::Extension, routing::get, Router};
 use clap::Parser;
 use tempfile::NamedTempFile;
-use tokio::fs::File;
+use tokio::fs::{self, create_dir_all, File, OpenOptions};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::sync::{oneshot, Mutex, RwLock};
@@ -103,7 +104,7 @@ struct Args {
 
     /// The location of `nix.conf`.
     #[arg(long)]
-    nix_conf: PathBuf,
+    nix_conf: Option<PathBuf>,
 
     /// Whether to use the GHA cache.
     #[arg(long)]
@@ -175,7 +176,7 @@ struct StateInner {
 }
 
 async fn main_cli() -> Result<()> {
-    let guard = init_logging()?;
+    let guard = init_logging().await?;
     let _tracing_guard = guard.appender_guard;
 
     let args = Args::parse();
@@ -185,15 +186,24 @@ async fn main_cli() -> Result<()> {
 
     let metrics = Arc::new(telemetry::TelemetryReport::new());
 
-    if let Some(parent) = Path::new(&args.nix_conf).parent() {
-        create_dir_all(parent).with_context(|| "Creating parent directories of nix.conf")?;
-    }
+    let mut nix_conf_file: Option<File> = if let Some(nix_conf_path) = &args.nix_conf {
+        if let Some(parent) = Path::new(&nix_conf_path).parent() {
+            create_dir_all(parent)
+                .await
+                .with_context(|| "Creating parent directories of nix.conf")?;
+        }
 
-    let mut nix_conf = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&args.nix_conf)
-        .with_context(|| "Creating nix.conf")?;
+        Some(
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(nix_conf_path)
+                .await
+                .with_context(|| "Creating nix.conf")?,
+        )
+    } else {
+        None
+    };
 
     let store = Arc::new(NixStore::connect()?);
 
@@ -221,16 +231,19 @@ async fn main_cli() -> Result<()> {
         .await
         {
             Ok(state) => {
-                nix_conf
-                    .write_all(
-                        format!(
-                            "extra-substituters = {}?trusted=1\nnetrc-file = {}\n",
-                            &flakehub_cache_server,
-                            flakehub_api_server_netrc.display()
+                if let Some(ref mut nix_conf_file) = nix_conf_file {
+                    nix_conf_file
+                        .write_all(
+                            format!(
+                                "extra-substituters = {}?trusted=1\nnetrc-file = {}\n",
+                                &flakehub_cache_server,
+                                flakehub_api_server_netrc.display()
+                            )
+                            .as_bytes(),
                         )
-                        .as_bytes(),
-                    )
-                    .with_context(|| "Writing to nix.conf")?;
+                        .await
+                        .with_context(|| "Writing to nix.conf")?;
+                }
 
                 tracing::info!("FlakeHub cache is enabled.");
                 Some(state)
@@ -250,7 +263,7 @@ async fn main_cli() -> Result<()> {
     let gha_cache = if args.use_gha_cache {
         let credentials = if let Some(credentials_file) = &args.credentials_file {
             tracing::info!("Loading credentials from {:?}", credentials_file);
-            let bytes = fs::read(credentials_file).with_context(|| {
+            let bytes = fs::read(credentials_file).await.with_context(|| {
                 format!(
                     "Failed to read credentials file '{}'",
                     credentials_file.display()
@@ -278,9 +291,12 @@ async fn main_cli() -> Result<()> {
         )
         .with_context(|| "Failed to initialize GitHub Actions Cache API")?;
 
-        nix_conf
-            .write_all(format!("extra-substituters = http://{}?trusted=1&compression=zstd&parallel-compression=true&priority=1\n", args.listen).as_bytes())
-            .with_context(|| "Writing to nix.conf")?;
+        if let Some(ref mut nix_conf_file) = nix_conf_file {
+            nix_conf_file
+          .write_all(format!("extra-substituters = http://{}?trusted=1&compression=zstd&parallel-compression=true&priority=1\n", args.listen).as_bytes())
+          .await
+          .with_context(|| "Writing to nix.conf")?;
+        }
 
         tracing::info!("Native GitHub Action cache is enabled.");
         Some(gha_cache)
@@ -315,7 +331,8 @@ async fn main_cli() -> Result<()> {
             .with_context(|| "Keeping the post-build hook")?
             .1;
 
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+        fs::set_permissions(&path, Permissions::from_mode(0o755))
+            .await
             .with_context(|| "Setting permissions on the post-build hook")?;
 
         /* Copy the script to the Nix store so we know for sure that
@@ -340,17 +357,20 @@ async fn main_cli() -> Result<()> {
     };
 
     /* Update nix.conf. */
-    nix_conf
-        .write_all(
-            format!(
-                "fallback = true\npost-build-hook = {}\n",
-                post_build_hook_script.display()
+    if let Some(ref mut nix_conf_file) = nix_conf_file.borrow_mut() {
+        nix_conf_file
+            .write_all(
+                format!(
+                    "fallback = true\npost-build-hook = {}\n",
+                    post_build_hook_script.display()
+                )
+                .as_bytes(),
             )
-            .as_bytes(),
-        )
-        .with_context(|| "Writing to nix.conf")?;
+            .await
+            .with_context(|| "Writing to nix.conf")?;
+    }
 
-    drop(nix_conf);
+    drop(nix_conf_file);
 
     let diagnostic_endpoint = match args.diagnostic_endpoint.as_str() {
         "" => {
@@ -513,7 +533,7 @@ pub struct LogGuard {
     logfile: Option<PathBuf>,
 }
 
-fn init_logging() -> Result<LogGuard> {
+async fn init_logging() -> Result<LogGuard> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         #[cfg(debug_assertions)]
         return EnvFilter::new("info")
@@ -531,12 +551,13 @@ fn init_logging() -> Result<LogGuard> {
     let (guard, file_layer) = match std::env::var("RUNNER_DEBUG") {
         Ok(val) if val == "1" => {
             let logfile = debug_logfile();
-            let file = std::fs::OpenOptions::new()
+            let file = OpenOptions::new()
                 .create(true)
                 .write(true)
                 .truncate(true)
-                .open(&logfile)?;
-            let (nonblocking, guard) = tracing_appender::non_blocking(file);
+                .open(&logfile)
+                .await?;
+            let (nonblocking, guard) = tracing_appender::non_blocking(file.into_std().await);
             let file_layer = tracing_subscriber::fmt::layer()
                 .with_writer(nonblocking)
                 .pretty();
