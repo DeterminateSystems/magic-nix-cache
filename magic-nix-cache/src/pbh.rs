@@ -85,7 +85,6 @@ pub async fn subscribe_uds_post_build_hook(
                     continue;
                 };
 
-                // TODO(colemickens): error handling:::
                 let maybe_store_paths = event
                     .outputs
                     .iter()
@@ -93,7 +92,7 @@ pub async fn subscribe_uds_post_build_hook(
                         state
                             .store
                             .follow_store_path(path)
-                            .map_err(|_| anyhow!("ahhhhh"))
+                            .map_err(|_| anyhow!("failed to collect store paths"))
                     })
                     .collect::<Result<Vec<_>>>();
 
