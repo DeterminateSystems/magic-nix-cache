@@ -49,7 +49,7 @@ pub async fn subscribe_uds_post_build_hook(
 
             let request = http::Request::builder()
                 .method(http::Method::GET)
-                .uri("http://localhost/built-paths")
+                .uri("http://localhost/events")
                 .body(axum::body::Body::empty());
             let Ok(request) = request else {
                 tracing::error!("built-paths: failed to create request to subscribe");
