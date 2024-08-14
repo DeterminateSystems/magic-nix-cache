@@ -329,8 +329,10 @@ async fn main_cli() -> Result<()> {
     let dnixd_uds_socket_path = dnixd_uds_socket_dir.join(DETERMINATE_NIXD_SOCKET_NAME);
 
     if dnixd_uds_socket_path.exists() {
+        tracing::info!("Subscribing to Determinate Nixd build events.");
         crate::pbh::subscribe_uds_post_build_hook(dnixd_uds_socket_path, state.clone()).await?;
     } else {
+        tracing::info!("Patching nix.conf to use a post-build-hook.");
         crate::pbh::setup_legacy_post_build_hook(&args.listen, &mut nix_conf).await?;
     }
 
