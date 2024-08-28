@@ -195,10 +195,16 @@ async fn main_cli() -> Result<()> {
 
     let metrics = Arc::new(telemetry::TelemetryReport::new());
 
+    let dnixd_uds_socket_dir: &Path = Path::new(&DETERMINATE_STATE_DIR);
+    let dnixd_uds_socket_path = dnixd_uds_socket_dir.join(DETERMINATE_NIXD_SOCKET_NAME);
+    let dnixd_available = dnixd_uds_socket_path.exists();
+
+    // NOTE: we expect this to point to a user nix.conf
+    // we always open/append to it to be able to append the extra-substituter for github-actions cache
+    // but we don't write to it for initializing flakehub_cache unless dnixd is unavailable
     if let Some(parent) = Path::new(&args.nix_conf).parent() {
         create_dir_all(parent).with_context(|| "Creating parent directories of nix.conf")?;
     }
-
     let mut nix_conf = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -231,16 +237,18 @@ async fn main_cli() -> Result<()> {
         .await
         {
             Ok(state) => {
-                nix_conf
-                    .write_all(
-                        format!(
-                            "extra-substituters = {}?trusted=1\nnetrc-file = {}\n",
-                            &flakehub_cache_server,
-                            flakehub_api_server_netrc.display()
+                if !dnixd_available {
+                    nix_conf
+                        .write_all(
+                            format!(
+                                "extra-substituters = {}?trusted=1\nnetrc-file = {}\n",
+                                &flakehub_cache_server,
+                                flakehub_api_server_netrc.display()
+                            )
+                            .as_bytes(),
                         )
-                        .as_bytes(),
-                    )
-                    .with_context(|| "Writing to nix.conf")?;
+                        .with_context(|| "Writing to nix.conf")?;
+                }
 
                 tracing::info!("FlakeHub cache is enabled.");
                 Some(state)
@@ -325,10 +333,7 @@ async fn main_cli() -> Result<()> {
         original_paths,
     });
 
-    let dnixd_uds_socket_dir: &Path = Path::new(&DETERMINATE_STATE_DIR);
-    let dnixd_uds_socket_path = dnixd_uds_socket_dir.join(DETERMINATE_NIXD_SOCKET_NAME);
-
-    if dnixd_uds_socket_path.exists() {
+    if dnixd_available {
         tracing::info!("Subscribing to Determinate Nixd build events.");
         crate::pbh::subscribe_uds_post_build_hook(dnixd_uds_socket_path, state.clone()).await?;
     } else {
