@@ -24,7 +24,16 @@ jobs:
       - name: Install Nix on ${{ matrix.systems.system }}
         uses: DeterminateSystems/nix-installer-action@main
         with:
-          extra-conf: "max-substitution-jobs = 8"
+          extra-args: "--determinate"
+          flakehub: true
+        #   extra-conf: "max-substitution-jobs = 8"
+      - name: fixup dnixd launchd conf
+        run: |
+          nix profile install nixpkgs#gnused
+          sudo launchctl limit maxfiles 9000000 9999999
+          sudo $(which sed) -i 's/1048576/9999999/g' /Library/LaunchDaemons/systems.determinate.nix-daemon.plist
+          sudo $(which sed) -i 's/2097152/9999999/g' /Library/LaunchDaemons/systems.determinate.nix-daemon.plist
+          sudo launchctl kickstart -k system/systems.determinate.nix-daemon
       - name: Magic Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
 

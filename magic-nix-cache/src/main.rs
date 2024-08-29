@@ -46,7 +46,7 @@ use gha_cache::Credentials;
 const DETERMINATE_STATE_DIR: &str = "/nix/var/determinate";
 const DETERMINATE_NIXD_SOCKET_NAME: &str = "determinate-nixd.socket";
 
-// cache bust
+// cache bust2
 
 // TODO(colemickens): refactor, move with other UDS stuff (or all PBH stuff) to new file
 #[derive(Clone, Debug, Serialize, Deserialize)]
