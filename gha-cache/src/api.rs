@@ -75,8 +75,8 @@ pub enum Error {
         info: ApiErrorInfo,
     },
 
-    #[error("I/O error: {0}")]
-    IoError(#[from] std::io::Error),
+    #[error("I/O error: {0}, context: {1}")]
+    IoError(std::io::Error, String),
 
     #[error("Too many collisions")]
     TooManyCollisions,
@@ -345,8 +345,9 @@ impl Api {
         let mut futures = Vec::new();
         loop {
             let buf = BytesMut::with_capacity(CHUNK_SIZE);
-            let chunk = read_chunk_async(&mut stream, buf).await?;
-
+            let chunk = read_chunk_async(&mut stream, buf)
+                .await
+                .map_err(|e| Error::IoError(e, "Reading a chunk during upload".to_string()))?;
             if chunk.is_empty() {
                 offset += chunk.len();
                 break;
