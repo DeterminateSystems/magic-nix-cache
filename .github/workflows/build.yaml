@@ -16,15 +16,6 @@ jobs:
     strategy:
       matrix:
         systems:
-          - nix-system: x86_64-linux
-            system: X64-Linux
-            runner: ubuntu-22.04
-          - nix-system: aarch64-linux
-            system: ARM64-Linux
-            runner: namespace-profile-default-arm64
-          - nix-system: x86_64-darwin
-            system: X64-macOS
-            runner: macos-12
           - nix-system: aarch64-darwin
             system: ARM64-macOS
             runner: macos-latest-xlarge
@@ -32,22 +23,31 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install Nix on ${{ matrix.systems.system }}
         uses: DeterminateSystems/nix-installer-action@main
-      - name: Magic Nix Cache
-        uses: DeterminateSystems/magic-nix-cache-action@main
-
-      - name: Build and cache dev shell for ${{ matrix.systems.nix-system }}
-        run: |
-          nix build ".#devShells.${{ matrix.systems.nix-system }}.default"
-
-      - name: Build package and create closure for ${{ matrix.systems.system }}
-        run: |
-          nix build .# -L --fallback && \
-            nix-store --export $(nix-store -qR ./result) | xz -9 > "${{ env.ARCHIVE_NAME }}"
-
-      - name: Upload magic-nix-cache closure for ${{ matrix.systems.system }}
-        uses: actions/upload-artifact@v3.1.2
         with:
-          # Artifact name
-          name: ${{ env.ARTIFACT_KEY }}
-          path: ${{ env.ARCHIVE_NAME }}
-          retention-days: 1
+          extra-args: "--determinate"
+          flakehub: true
+      - name: help
+        if: always()
+        uses: namespacelabs/breakpoint-action@v0
+        with:
+          duration: 30m
+          authorized-users: grahamc, colemickens
+      # - name: Magic Nix Cache
+      #   uses: DeterminateSystems/magic-nix-cache-action@main
+
+      # - name: Build and cache dev shell for ${{ matrix.systems.nix-system }}
+      #   run: |
+      #     nix build ".#devShells.${{ matrix.systems.nix-system }}.default"
+
+      # - name: Build package and create closure for ${{ matrix.systems.system }}
+      #   run: |
+      #     nix build .# -L --fallback && \
+      #       nix-store --export $(nix-store -qR ./result) | xz -9 > "${{ env.ARCHIVE_NAME }}"
+
+      # - name: Upload magic-nix-cache closure for ${{ matrix.systems.system }}
+      #   uses: actions/upload-artifact@v3.1.2
+      #   with:
+      #     # Artifact name
+      #     name: ${{ env.ARTIFACT_KEY }}
+      #     path: ${{ env.ARCHIVE_NAME }}
+      #     retention-days: 1
