@@ -57,9 +57,12 @@ pub async fn subscribe_uds_post_build_hook(
             };
 
             let response = sender.send_request(request).await;
-            let Ok(response) = response else {
-                tracing::error!("buit-paths: failed to send subscription request");
-                continue;
+            let response = match response {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::error!("buit-paths: failed to send subscription request: {:?}", e);
+                    continue;
+                }
             };
             let mut data = response.into_data_stream();
 
