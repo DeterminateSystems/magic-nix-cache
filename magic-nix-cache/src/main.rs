@@ -462,8 +462,16 @@ fn init_logging() -> Result<LogGuard> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         #[cfg(debug_assertions)]
         return EnvFilter::new("info")
-            .add_directive("magic_nix_cache=debug".parse().unwrap())
-            .add_directive("gha_cache=debug".parse().unwrap());
+            .add_directive(
+                "magic_nix_cache=debug"
+                    .parse()
+                    .expect("failed to parse magix_nix_cache directive"),
+            )
+            .add_directive(
+                "gha_cache=debug"
+                    .parse()
+                    .expect("failed to parse gha_cahce directive"),
+            );
 
         #[cfg(not(debug_assertions))]
         return EnvFilter::new("info");

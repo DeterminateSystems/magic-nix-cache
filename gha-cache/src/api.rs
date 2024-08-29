@@ -369,7 +369,10 @@ impl Api {
                 let url = self.construct_url(&format!("caches/{}", allocation.0 .0));
 
                 tokio::task::spawn(async move {
-                    let permit = concurrency_limit.acquire().await.unwrap();
+                    let permit = concurrency_limit
+                        .acquire()
+                        .await
+                        .expect("failed to acquire concurrency semaphore permit");
 
                     tracing::trace!(
                         "Starting uploading chunk {}-{}",
@@ -411,7 +414,9 @@ impl Api {
         future::join_all(futures)
             .await
             .into_iter()
-            .try_for_each(|join_result| join_result.unwrap())?;
+            .try_for_each(|join_result| {
+                join_result.expect("failed collecting a join result during parallel upload")
+            })?;
 
         tracing::debug!("Received all chunks for cache {:?}", allocation.0);
 
