@@ -233,6 +233,7 @@ async fn main_cli() -> Result<()> {
             &flakehub_cache_server,
             flakehub_flake_name,
             store.clone(),
+            dnixd_available,
         )
         .await
         {
