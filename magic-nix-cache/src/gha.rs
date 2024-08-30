@@ -72,7 +72,9 @@ impl GhaCache {
             self.channel_tx
                 .send(Request::Shutdown)
                 .expect("Cannot send shutdown message");
-            worker_result.await.unwrap()
+            worker_result
+                .await
+                .expect("failed to read result from gha worker")
         } else {
             Ok(())
         }
@@ -189,7 +191,7 @@ async fn upload_path(
 
     let narinfo = path_info_to_nar_info(store.clone(), &path_info, format!("nar/{}", nar_path))
         .to_string()
-        .unwrap();
+        .expect("failed to convert path into to nar info");
 
     tracing::debug!("Uploading '{}'", narinfo_path);
 
@@ -224,7 +226,17 @@ fn path_info_to_nar_info(store: Arc<NixStore>, path_info: &ValidPathInfo, url: S
         references: path_info
             .references
             .iter()
-            .map(|r| r.file_name().unwrap().to_str().unwrap().to_owned())
+            .map(|r| {
+                r.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "failed to convert nar_info reference to string: {}",
+                            r.display()
+                        )
+                    })
+                    .to_owned()
+            })
             .collect(),
         system: None,
         deriver: None,

@@ -164,9 +164,20 @@ pub async fn setup_legacy_post_build_hook(
                 &path.display().to_string(),
             ])
             .output()
-            .await?;
+            .await
+            .with_context(|| {
+                format!(
+                    "Running nix to add the post-build-hook to the store from {}",
+                    path.display()
+                )
+            })?;
         if res.status.success() {
-            tokio::fs::remove_file(path).await?;
+            tokio::fs::remove_file(&path).await.with_context(|| {
+                format!(
+                    "Cleaning up the temporary post-build-hook at {}",
+                    path.display()
+                )
+            })?;
             PathBuf::from(String::from_utf8_lossy(&res.stdout).trim())
         } else {
             path

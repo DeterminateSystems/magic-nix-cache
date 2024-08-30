@@ -392,8 +392,33 @@ async fn main_cli() -> Result<()> {
 
         tracing::debug!("Startup notification via file at {startup_notification_file_path:?}");
 
-        let mut notification_file = File::create(&startup_notification_file_path).await?;
-        notification_file.write_all(file_contents).await?;
+        if let Some(parent_dir) = startup_notification_file_path.parent() {
+            tokio::fs::create_dir_all(parent_dir)
+                .await
+                .with_context(|| {
+                    format!(
+                        "failed to create parent directory for startup notification file path: {}",
+                        startup_notification_file_path.display()
+                    )
+                })?;
+        }
+        let mut notification_file = File::create(&startup_notification_file_path)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to create startup notification file to path: {}",
+                    startup_notification_file_path.display()
+                )
+            })?;
+        notification_file
+            .write_all(file_contents)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to write startup notification file to path: {}",
+                    startup_notification_file_path.display()
+                )
+            })?;
 
         tracing::debug!("Created startup notification file at {startup_notification_file_path:?}");
     }
@@ -437,8 +462,16 @@ fn init_logging() -> Result<LogGuard> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         #[cfg(debug_assertions)]
         return EnvFilter::new("info")
-            .add_directive("magic_nix_cache=debug".parse().unwrap())
-            .add_directive("gha_cache=debug".parse().unwrap());
+            .add_directive(
+                "magic_nix_cache=debug"
+                    .parse()
+                    .expect("failed to parse magix_nix_cache directive"),
+            )
+            .add_directive(
+                "gha_cache=debug"
+                    .parse()
+                    .expect("failed to parse gha_cahce directive"),
+            );
 
         #[cfg(not(debug_assertions))]
         return EnvFilter::new("info");

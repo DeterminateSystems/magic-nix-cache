@@ -75,8 +75,8 @@ pub enum Error {
         info: ApiErrorInfo,
     },
 
-    #[error("I/O error: {0}")]
-    IoError(#[from] std::io::Error),
+    #[error("I/O error: {0}, context: {1}")]
+    IoError(std::io::Error, String),
 
     #[error("Too many collisions")]
     TooManyCollisions,
@@ -345,8 +345,9 @@ impl Api {
         let mut futures = Vec::new();
         loop {
             let buf = BytesMut::with_capacity(CHUNK_SIZE);
-            let chunk = read_chunk_async(&mut stream, buf).await?;
-
+            let chunk = read_chunk_async(&mut stream, buf)
+                .await
+                .map_err(|e| Error::IoError(e, "Reading a chunk during upload".to_string()))?;
             if chunk.is_empty() {
                 offset += chunk.len();
                 break;
@@ -368,7 +369,10 @@ impl Api {
                 let url = self.construct_url(&format!("caches/{}", allocation.0 .0));
 
                 tokio::task::spawn(async move {
-                    let permit = concurrency_limit.acquire().await.unwrap();
+                    let permit = concurrency_limit
+                        .acquire()
+                        .await
+                        .expect("failed to acquire concurrency semaphore permit");
 
                     tracing::trace!(
                         "Starting uploading chunk {}-{}",
@@ -410,7 +414,9 @@ impl Api {
         future::join_all(futures)
             .await
             .into_iter()
-            .try_for_each(|join_result| join_result.unwrap())?;
+            .try_for_each(|join_result| {
+                join_result.expect("failed collecting a join result during parallel upload")
+            })?;
 
         tracing::debug!("Received all chunks for cache {:?}", allocation.0);
 

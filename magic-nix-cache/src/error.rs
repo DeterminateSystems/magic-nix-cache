@@ -19,8 +19,8 @@ pub enum Error {
     #[error("Bad Request")]
     BadRequest,
 
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
+    #[error("I/O error: {0}. Context: {1}")]
+    Io(std::io::Error, String),
 
     #[error("GHA cache is disabled")]
     GHADisabled,

@@ -112,7 +112,8 @@ async fn workflow_finish(
 
     // NOTE(cole-h): see `init_logging`
     if let Some(logfile) = &state.logfile {
-        let logfile_contents = std::fs::read_to_string(logfile)?;
+        let logfile_contents = std::fs::read_to_string(logfile)
+            .map_err(|e| crate::error::Error::Io(e, format!("Reading {}", logfile.display())))?;
         println!("Every log line throughout the lifetime of the program:");
         println!("\n{logfile_contents}\n");
     }

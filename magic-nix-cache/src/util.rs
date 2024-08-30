@@ -11,9 +11,19 @@ use crate::error::Result;
 pub async fn get_store_paths(store: &NixStore) -> Result<HashSet<PathBuf>> {
     // FIXME: use the Nix API.
     let store_dir = store.store_dir();
-    let mut listing = tokio::fs::read_dir(store_dir).await?;
+    let mut listing = tokio::fs::read_dir(store_dir).await.map_err(|e| {
+        crate::error::Error::Io(
+            e,
+            format!("Enumerating store paths in {}", store_dir.display()),
+        )
+    })?;
     let mut paths = HashSet::new();
-    while let Some(entry) = listing.next_entry().await? {
+    while let Some(entry) = listing.next_entry().await.map_err(|e| {
+        crate::error::Error::Io(
+            e,
+            format!("Reading existing store paths from {}", store_dir.display()),
+        )
+    })? {
         let file_name = entry.file_name();
         let file_name = Path::new(&file_name);
 
