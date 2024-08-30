@@ -219,9 +219,18 @@ async fn main_cli() -> Result<()> {
         let flakehub_cache_server = args
             .flakehub_cache_server
             .ok_or_else(|| anyhow!("--flakehub-cache-server is required"))?;
-        let flakehub_api_server_netrc = args
-            .flakehub_api_server_netrc
-            .ok_or_else(|| anyhow!("--flakehub-api-server-netrc is required"))?;
+
+        let flakehub_api_server_netrc = if dnixd_available {
+            let dnixd_netrc_path = PathBuf::from(DETERMINATE_STATE_DIR).join("netrc");
+            args.flakehub_api_server_netrc.unwrap_or(dnixd_netrc_path)
+        } else {
+            args.flakehub_api_server_netrc.ok_or_else(|| {
+                anyhow!(
+                    "--flakehub-api-server-netrc is required when determinate-nixd is unavailable"
+                )
+            })?
+        };
+
         let flakehub_flake_name = args.flakehub_flake_name;
 
         match flakehub::init_cache(
@@ -233,6 +242,7 @@ async fn main_cli() -> Result<()> {
             &flakehub_cache_server,
             flakehub_flake_name,
             store.clone(),
+            dnixd_available,
         )
         .await
         {

@@ -1,5 +1,5 @@
 use crate::env::Environment;
-use crate::error::{Error, Result};
+use crate::error::{self, Error, Result};
 use anyhow::Context;
 use attic::cache::CacheName;
 use attic::nix_store::{NixStore, StorePath};
@@ -9,6 +9,7 @@ use attic_client::{
     config::ServerConfig,
     push::{PushConfig, Pusher},
 };
+
 use reqwest::header::HeaderValue;
 use reqwest::Url;
 use serde::Deserialize;
@@ -35,7 +36,16 @@ pub async fn init_cache(
     flakehub_cache_server: &Url,
     flakehub_flake_name: Option<String>,
     store: Arc<NixStore>,
+    using_dnixd: bool,
 ) -> Result<State> {
+    if using_dnixd {
+        let dnixd_state_dir: &Path = Path::new(&crate::DETERMINATE_STATE_DIR);
+        let expected_netrc_path = dnixd_state_dir.join("netrc");
+        if flakehub_api_server_netrc != expected_netrc_path {
+            let err = format!("flakehub-api-server-netrc was ({}), expected ({}) since determinate-nixd is available", flakehub_api_server_netrc.display(), expected_netrc_path.display());
+            return Err(error::Error::Config(err));
+        }
+    }
     // Parse netrc to get the credentials for api.flakehub.com.
     let netrc = {
         let mut netrc_file = File::open(flakehub_api_server_netrc).await.map_err(|e| {
@@ -89,41 +99,43 @@ pub async fn init_cache(
         ))
     })?;
 
-    // Append an entry for the FlakeHub cache server to netrc.
-    if !netrc
-        .machines
-        .iter()
-        .any(|machine| machine.name.as_ref() == Some(&flakehub_cache_server_hostname))
-    {
-        let mut netrc_file = tokio::fs::OpenOptions::new()
-            .create(false)
-            .append(true)
-            .open(flakehub_api_server_netrc)
-            .await
-            .map_err(|e| {
-                Error::Internal(format!(
-                    "Failed to open {} for appending: {}",
-                    flakehub_api_server_netrc.display(),
-                    e
-                ))
-            })?;
+    if !using_dnixd {
+        // Append an entry for the FlakeHub cache server to netrc.
+        if !netrc
+            .machines
+            .iter()
+            .any(|machine| machine.name.as_ref() == Some(&flakehub_cache_server_hostname))
+        {
+            let mut netrc_file = tokio::fs::OpenOptions::new()
+                .create(false)
+                .append(true)
+                .open(flakehub_api_server_netrc)
+                .await
+                .map_err(|e| {
+                    Error::Internal(format!(
+                        "Failed to open {} for appending: {}",
+                        flakehub_api_server_netrc.display(),
+                        e
+                    ))
+                })?;
 
-        netrc_file
-            .write_all(
-                format!(
-                    "\nmachine {} login {} password {}\n\n",
-                    flakehub_cache_server_hostname, flakehub_login, flakehub_password,
+            netrc_file
+                .write_all(
+                    format!(
+                        "\nmachine {} login {} password {}\n\n",
+                        flakehub_cache_server_hostname, flakehub_login, flakehub_password,
+                    )
+                    .as_bytes(),
                 )
-                .as_bytes(),
-            )
-            .await
-            .map_err(|e| {
-                Error::Internal(format!(
-                    "Failed to write credentials to {}: {}",
-                    flakehub_api_server_netrc.display(),
-                    e
-                ))
-            })?;
+                .await
+                .map_err(|e| {
+                    Error::Internal(format!(
+                        "Failed to write credentials to {}: {}",
+                        flakehub_api_server_netrc.display(),
+                        e
+                    ))
+                })?;
+        }
     }
 
     let server_config = ServerConfig {
