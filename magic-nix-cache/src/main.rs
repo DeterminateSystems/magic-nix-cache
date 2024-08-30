@@ -113,7 +113,7 @@ struct Args {
 
     /// The location of `nix.conf`.
     #[arg(long)]
-    nix_conf: PathBuf,
+    nix_conf: Option<PathBuf>,
 
     /// Whether to use the GHA cache.
     #[arg(long)]
@@ -199,16 +199,24 @@ async fn main_cli() -> Result<()> {
     let dnixd_uds_socket_path = dnixd_uds_socket_dir.join(DETERMINATE_NIXD_SOCKET_NAME);
     let dnixd_available = dnixd_uds_socket_path.exists();
 
+    let nix_conf_path: PathBuf = match args.nix_conf {
+        Some(nc) => nc,
+        None => {
+            let xdg = xdg::BaseDirectories::new().with_context(|| "failed to get xdg base dirs")?;
+            xdg.get_config_file("nix/nix.conf")
+        }
+    };
+
     // NOTE: we expect this to point to a user nix.conf
     // we always open/append to it to be able to append the extra-substituter for github-actions cache
     // but we don't write to it for initializing flakehub_cache unless dnixd is unavailable
-    if let Some(parent) = Path::new(&args.nix_conf).parent() {
+    if let Some(parent) = Path::new(&nix_conf_path).parent() {
         create_dir_all(parent).with_context(|| "Creating parent directories of nix.conf")?;
     }
     let mut nix_conf = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&args.nix_conf)
+        .open(&nix_conf_path)
         .with_context(|| "Creating nix.conf")?;
 
     let store = Arc::new(NixStore::connect()?);
@@ -216,9 +224,10 @@ async fn main_cli() -> Result<()> {
     let narinfo_negative_cache = Arc::new(RwLock::new(HashSet::new()));
 
     let flakehub_state = if args.use_flakehub {
-        let flakehub_cache_server = args
-            .flakehub_cache_server
-            .ok_or_else(|| anyhow!("--flakehub-cache-server is required"))?;
+        let flakehub_cache_server = args.flakehub_cache_server.unwrap_or(
+            reqwest::Url::parse("https://cache.flakehub.com")
+                .expect("failed to parse default flakehub cache url"),
+        );
 
         let flakehub_api_server_netrc = if dnixd_available {
             let dnixd_netrc_path = PathBuf::from(DETERMINATE_STATE_DIR).join("netrc");
@@ -231,13 +240,16 @@ async fn main_cli() -> Result<()> {
             })?
         };
 
+        let flakehub_api_server = &args.flakehub_api_server.unwrap_or(
+            reqwest::Url::parse("https://api.flakehub.com")
+                .expect("failed to parse default flakehub api server"),
+        );
+
         let flakehub_flake_name = args.flakehub_flake_name;
 
         match flakehub::init_cache(
             environment,
-            &args
-                .flakehub_api_server
-                .ok_or_else(|| anyhow!("--flakehub-api-server is required"))?,
+            flakehub_api_server,
             &flakehub_api_server_netrc,
             &flakehub_cache_server,
             flakehub_flake_name,
