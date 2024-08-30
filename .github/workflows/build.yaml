@@ -35,10 +35,10 @@ jobs:
       - name: fixup dnixd launchd conf
         run: |
           nix profile install nixpkgs#gnused
-          sudo $(which sed) -i 's/1048576/2097152/g' /Library/LaunchDaemons/systems.determinate.nix-daemon.plist || echo "not detsys"
-          sudo $(which sed) -i 's/2097152/2097152/g' /Library/LaunchDaemons/systems.determinate.nix-daemon.plist || echo "not detsys"
-          sudo $(which sed) -i 's/1048576/2097152/g' /Library/LaunchDaemons/org.nixos.nix-daemon.plist || echo "detsys"
-          sudo $(which sed) -i 's/2097152/2097152/g' /Library/LaunchDaemons/org.nixos.nix-daemon.plist || echo "detsys"
+          sudo $(which sed) -i 's/1048576/4194304/g' /Library/LaunchDaemons/systems.determinate.nix-daemon.plist || echo "not detsys"
+          sudo $(which sed) -i 's/2097152/4194304/g' /Library/LaunchDaemons/systems.determinate.nix-daemon.plist || echo "not detsys"
+          sudo $(which sed) -i 's/1048576/4194304/g' /Library/LaunchDaemons/org.nixos.nix-daemon.plist || echo "detsys"
+          sudo $(which sed) -i 's/2097152/4194304/g' /Library/LaunchDaemons/org.nixos.nix-daemon.plist || echo "detsys"
           sudo launchctl kickstart -k system/systems.determinate.nix-daemon || echo "not detsys"
           sudo launchctl kickstart -k system/org.nixos.nix-daemon || echo "detsys"
       - name: Magic Nix Cache
