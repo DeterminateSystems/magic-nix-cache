@@ -19,26 +19,34 @@ jobs:
           - nix-system: aarch64-darwin
             system: ARM64-macOS
             runner: macos-latest-xlarge
+            determinate: true
+          - nix-system: aarch64-darwin
+            system: ARM64-macOS
+            runner: macos-latest-xlarge
+            determinate: false
     steps:
       - uses: actions/checkout@v3
       - name: Install Nix on ${{ matrix.systems.system }}
         uses: DeterminateSystems/nix-installer-action@main
         with:
-          extra-args: "--determinate"
+          extra-args: ${{ matrix.systems.determinate && "--determinate" }}
           flakehub: true
         #   extra-conf: "max-substitution-jobs = 8"
       - name: fixup dnixd launchd conf
         run: |
           nix profile install nixpkgs#gnused
-          sudo launchctl limit maxfiles 9000000 9999999
-          sudo $(which sed) -i 's/1048576/9999999/g' /Library/LaunchDaemons/systems.determinate.nix-daemon.plist
-          sudo $(which sed) -i 's/2097152/9999999/g' /Library/LaunchDaemons/systems.determinate.nix-daemon.plist
-          sudo launchctl kickstart -k system/systems.determinate.nix-daemon
+          sudo $(which sed) -i 's/1048576/536870912/g' /Library/LaunchDaemons/systems.determinate.nix-daemon.plist || echo "not detsys"
+          sudo $(which sed) -i 's/2097152/536870912/g' /Library/LaunchDaemons/systems.determinate.nix-daemon.plist || echo "not detsys"
+          sudo $(which sed) -i 's/1048576/536870912/g' /Library/LaunchDaemons/org.nixos.nix-daemon.plist || echo "detsys"
+          sudo $(which sed) -i 's/2097152/536870912/g' /Library/LaunchDaemons/org.nixos.nix-daemon.plist || echo "detsys"
+          sudo launchctl kickstart -k system/systems.determinate.nix-daemon || echo "not detsys"
+          sudo launchctl kickstart -k system/org.nixos.nix-daemon || echo "detsys"
       - name: Magic Nix Cache
         uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Build and cache dev shell for ${{ matrix.systems.nix-system }}
         run: |
+          printf "\n\n# %s\n\n" "$RANDOM" >> Cargo.toml
           nix build ".#devShells.${{ matrix.systems.nix-system }}.default"
 
       - name: Build package and create closure for ${{ matrix.systems.system }}
