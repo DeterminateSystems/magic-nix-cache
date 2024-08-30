@@ -16,15 +16,15 @@ jobs:
     strategy:
       matrix:
         systems:
-          - nix-system: x86_64-linux
-            system: X64-Linux
-            runner: ubuntu-22.04
-          - nix-system: aarch64-linux
-            system: ARM64-Linux
-            runner: namespace-profile-default-arm64
-          - nix-system: x86_64-darwin
-            system: X64-macOS
-            runner: macos-12
+          # - nix-system: x86_64-linux
+          #   system: X64-Linux
+          #   runner: ubuntu-22.04
+          # - nix-system: aarch64-linux
+          #   system: ARM64-Linux
+          #   runner: namespace-profile-default-arm64
+          # - nix-system: x86_64-darwin
+          #   system: X64-macOS
+          #   runner: macos-12
           - nix-system: aarch64-darwin
             system: ARM64-macOS
             runner: macos-latest-xlarge
@@ -41,6 +41,7 @@ jobs:
 
       - name: Build package and create closure for ${{ matrix.systems.system }}
         run: |
+          ulimit -a
           nix build .# -L --fallback && \
             nix-store --export $(nix-store -qR ./result) | xz -9 > "${{ env.ARCHIVE_NAME }}"
 

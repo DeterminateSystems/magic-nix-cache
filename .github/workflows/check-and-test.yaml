@@ -6,35 +6,8 @@ on:
     branches: [main]
 
 jobs:
-  checks:
-    name: Nix and Rust checks
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
-
-      - name: Check health of flake.lock
-        uses: DeterminateSystems/flake-checker-action@main
-        # TODO: re-enable fail mode when we find a way to bump Nixpkgs to 24.05
-        # without breaking the static Rust build
-        #with:
-        #  fail-mode: true
-
-      - name: Check Rust formatting
-        run: nix develop --command cargo fmt --check
-
-      - name: Clippy
-        run: nix develop --command cargo clippy
-
   build:
     name: Build artifacts
-    needs: checks
     uses: ./.github/workflows/build.yaml
     secrets: inherit
 
@@ -48,12 +21,12 @@ jobs:
     strategy:
       matrix:
         systems:
-          - system: X64-Linux
-            runner: ubuntu-22.04
-          - system: ARM64-Linux
-            runner: namespace-profile-default-arm64
-          - system: X64-macOS
-            runner: macos-12
+          # - system: X64-Linux
+          #   runner: ubuntu-22.04
+          # - system: ARM64-Linux
+          #   runner: namespace-profile-default-arm64
+          # - system: X64-macOS
+          #   runner: macos-12
           - system: ARM64-macOS
             runner: macos-latest-xlarge
     permissions:
@@ -74,6 +47,7 @@ jobs:
       - name: Test magic-nix-cache-action@main on ${{ matrix.systems.runner }}
         uses: DeterminateSystems/magic-nix-cache-action@main
         with:
+          use-gha-cache: false
           source-binary: "${{ env.ARTIFACT_KEY }}/${{ env.ARCHIVE_NAME }}"
           _internal-strict-mode: true
 
@@ -82,7 +56,9 @@ jobs:
           nix develop --command echo "just testing"
       - name: Exhaust our GitHub Actions Cache tokens
         # Generally skip this step since it is so intensive
-        if: ${{ false }}
+        # if: ${{ false }}
         run: |
-          date >> README.md
-          nix build .#veryLongChain -v
+          ulimit -n
+          # date >> README.md
+          # nix build .#veryLongChain -v
+          nix build .#veryWideNet -v

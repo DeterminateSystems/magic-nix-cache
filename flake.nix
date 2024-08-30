@@ -126,7 +126,42 @@
           in
           # Starting point of the chain
           createChain 200 startFile;
+
+        veryWideNet =
+          let
+            ctx = ./README.md;
+
+            # Function to write the current date to a file
+            startFile =
+              pkgs.stdenv.mkDerivation {
+                name = "start-file";
+                buildCommand = ''
+                  cat ${ctx} > $out
+                '';
+              };
+
+            # Recursive function to create a chain of derivations
+            createNet = n: startFile:
+              pkgs.stdenv.mkDerivation {
+                name = "net-${toString n}";
+                src = startFile;
+                buildCommand = ''
+                  echo $src > $out
+                '';
+              };
+
+          in
+          pkgs.stdenv.mkDerivation {
+            name = "net";
+            src = startFile;
+            buildCommand = ''
+              echo $src > $out
+            '';
+
+            buildInputs = builtins.genList (x: createNet x startFile) 2000;
+          };
       });
+
 
       devShells = forEachSupportedSystem ({ system, pkgs, lib }:
       let
