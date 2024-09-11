@@ -56,7 +56,7 @@ jobs:
             runner: macos-12
           - system: ARM64-macOS
             runner: macos-latest-xlarge
-        extra_nix_instaler_args:
+        extra_nix_installer_args:
         - "--determinate"
         - ""
     permissions:
