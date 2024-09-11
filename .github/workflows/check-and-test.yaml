@@ -56,6 +56,9 @@ jobs:
             runner: macos-12
           - system: ARM64-macOS
             runner: macos-latest-xlarge
+        extra_nix_instaler_args:
+        - "--determinate"
+        - ""
     permissions:
       contents: read
       id-token: write
@@ -68,8 +71,10 @@ jobs:
           name: ${{ env.ARTIFACT_KEY }}
           path: ${{ env.ARTIFACT_KEY }}
 
-      - name: Install Nix on ${{ matrix.systems.system }}
+      - name: Install Nix on ${{ matrix.systems.system }} 
         uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-args: ${{ matrix.extra_nix_installer_args }}
 
       - name: Test magic-nix-cache-action@main on ${{ matrix.systems.runner }}
         uses: DeterminateSystems/magic-nix-cache-action@main
