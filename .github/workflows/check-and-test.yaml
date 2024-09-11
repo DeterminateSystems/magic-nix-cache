@@ -71,7 +71,7 @@ jobs:
           name: ${{ env.ARTIFACT_KEY }}
           path: ${{ env.ARTIFACT_KEY }}
 
-      - name: Install Nix on ${{ matrix.systems.system }} 
+      - name: Install Nix on ${{ matrix.systems.system }}
         uses: DeterminateSystems/nix-installer-action@main
         with:
           extra-args: ${{ matrix.extra_nix_installer_args }}
