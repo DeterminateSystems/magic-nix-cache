@@ -74,7 +74,7 @@ jobs:
       - name: Install Nix on ${{ matrix.systems.system }}
         uses: DeterminateSystems/nix-installer-action@main
         with:
-          source-pr: 1653
+          source-pr: 1163
           extra-args: ${{ matrix.extra_nix_installer_args }}
       - run: determinate-nixd login github-action
 
