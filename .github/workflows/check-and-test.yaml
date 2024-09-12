@@ -75,6 +75,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@main
         with:
           extra-args: ${{ matrix.extra_nix_installer_args }}
+      - run: determinate-nixd login github-action
 
       - name: Test magic-nix-cache-action@main on ${{ matrix.systems.runner }}
         uses: DeterminateSystems/magic-nix-cache-action@main
