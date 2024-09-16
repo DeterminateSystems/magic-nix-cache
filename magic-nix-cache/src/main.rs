@@ -222,6 +222,11 @@ async fn main_cli() -> Result<()> {
         .open(&nix_conf_path)
         .with_context(|| "Creating nix.conf")?;
 
+    // always enable fallback, first
+    nix_conf
+        .write_all(b"fallback = true\n")
+        .with_context(|| "Setting fallback in nix.conf")?;
+
     let store = Arc::new(NixStore::connect()?);
 
     let narinfo_negative_cache = Arc::new(RwLock::new(HashSet::new()));
