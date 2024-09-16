@@ -186,13 +186,7 @@ pub async fn setup_legacy_post_build_hook(
 
     /* Update nix.conf. */
     nix_conf
-        .write_all(
-            format!(
-                "fallback = true\npost-build-hook = {}\n",
-                post_build_hook_script.display()
-            )
-            .as_bytes(),
-        )
+        .write_all(format!("post-build-hook = {}\n", post_build_hook_script.display()).as_bytes())
         .with_context(|| "Writing to nix.conf")?;
 
     Ok(())
