@@ -23,7 +23,7 @@ mod telemetry;
 mod util;
 
 use std::collections::HashSet;
-use std::fs::{self, create_dir_all};
+use std::fs::create_dir_all;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -59,13 +59,6 @@ type State = Arc<StateInner>;
 /// GitHub Actions-powered Nix binary cache
 #[derive(Parser, Debug)]
 struct Args {
-    /// JSON file containing credentials.
-    ///
-    /// If this is not specified, credentials will be loaded
-    /// from the environment.
-    #[arg(short = 'c', long)]
-    credentials_file: Option<PathBuf>,
-
     /// Address to listen on.
     ///
     /// FIXME: IPv6
@@ -193,6 +186,26 @@ struct StateInner {
     original_paths: Option<Mutex<HashSet<PathBuf>>>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) enum FlakeHubAuthSource {
+    DeterminateNixd,
+    Netrc(PathBuf),
+}
+
+impl FlakeHubAuthSource {
+    pub(crate) fn as_path_buf(&self) -> PathBuf {
+        match &self {
+            Self::Netrc(path) => path.clone(),
+            Self::DeterminateNixd => {
+                let mut path = PathBuf::from(DETERMINATE_STATE_DIR);
+                path.push("netrc");
+
+                path
+            }
+        }
+    }
+}
+
 async fn main_cli() -> Result<()> {
     let guard = init_logging()?;
     let _tracing_guard = guard.appender_guard;
@@ -231,19 +244,18 @@ async fn main_cli() -> Result<()> {
 
     let narinfo_negative_cache = Arc::new(RwLock::new(HashSet::new()));
 
+    let auth_method: FlakeHubAuthSource = match (args.flakehub_api_server_netrc, dnixd_available) {
+        (_, true) => FlakeHubAuthSource::DeterminateNixd,
+        (Some(path), false) => FlakeHubAuthSource::Netrc(path),
+        (None, false) => {
+            return Err(anyhow!(
+                "--flakehub-api-server-netrc is required when determinate-nixd is unavailable"
+            ));
+        }
+    };
+
     let flakehub_state = if args.use_flakehub {
         let flakehub_cache_server = args.flakehub_cache_server;
-
-        let flakehub_api_server_netrc = if dnixd_available {
-            let dnixd_netrc_path = PathBuf::from(DETERMINATE_STATE_DIR).join("netrc");
-            args.flakehub_api_server_netrc.unwrap_or(dnixd_netrc_path)
-        } else {
-            args.flakehub_api_server_netrc.ok_or_else(|| {
-                anyhow!(
-                    "--flakehub-api-server-netrc is required when determinate-nixd is unavailable"
-                )
-            })?
-        };
 
         let flakehub_api_server = &args.flakehub_api_server;
 
@@ -252,22 +264,21 @@ async fn main_cli() -> Result<()> {
         match flakehub::init_cache(
             environment,
             flakehub_api_server,
-            &flakehub_api_server_netrc,
             &flakehub_cache_server,
             flakehub_flake_name,
             store.clone(),
-            dnixd_available,
+            &auth_method,
         )
         .await
         {
             Ok(state) => {
-                if !dnixd_available {
+                if let FlakeHubAuthSource::Netrc(ref path) = auth_method {
                     nix_conf
                         .write_all(
                             format!(
                                 "extra-substituters = {}?trusted=1\nnetrc-file = {}\n",
                                 &flakehub_cache_server,
-                                flakehub_api_server_netrc.display()
+                                path.display()
                             )
                             .as_bytes(),
                         )
@@ -290,26 +301,10 @@ async fn main_cli() -> Result<()> {
     };
 
     let gha_cache = if args.use_gha_cache {
-        let credentials = if let Some(credentials_file) = &args.credentials_file {
-            tracing::info!("Loading credentials from {:?}", credentials_file);
-            let bytes = fs::read(credentials_file).with_context(|| {
-                format!(
-                    "Failed to read credentials file '{}'",
-                    credentials_file.display()
-                )
-            })?;
+        tracing::info!("Loading credentials from environment");
 
-            serde_json::from_slice(&bytes).with_context(|| {
-                format!(
-                    "Failed to deserialize credentials file '{}'",
-                    credentials_file.display()
-                )
-            })?
-        } else {
-            tracing::info!("Loading credentials from environment");
-            Credentials::load_from_env()
-                .with_context(|| "Failed to load credentials from environment (see README.md)")?
-        };
+        let credentials = Credentials::load_from_env()
+            .with_context(|| "Failed to load credentials from environment (see README.md)")?;
 
         let gha_cache = gha::GhaCache::new(
             credentials,
