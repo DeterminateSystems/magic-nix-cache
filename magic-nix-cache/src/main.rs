@@ -245,7 +245,11 @@ async fn main_cli() -> Result<()> {
     let narinfo_negative_cache = Arc::new(RwLock::new(HashSet::new()));
 
     let auth_method: FlakeHubAuthSource = match (args.flakehub_api_server_netrc, dnixd_available) {
-        (_, true) => FlakeHubAuthSource::DeterminateNixd,
+        (None, true) => FlakeHubAuthSource::DeterminateNixd,
+        (Some(_), true) => {
+            tracing::info!("Ignoring the user-specified --flakehub-api-server-netrc, in favor of the determinate-nixd netrc");
+            FlakeHubAuthSource::DeterminateNixd
+        }
         (Some(path), false) => FlakeHubAuthSource::Netrc(path),
         (None, false) => {
             return Err(anyhow!(
