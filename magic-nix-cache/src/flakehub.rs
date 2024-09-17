@@ -1,5 +1,5 @@
 use crate::env::Environment;
-use crate::error::{self, Error, Result};
+use crate::error::{Error, Result};
 use anyhow::Context;
 use attic::cache::CacheName;
 use attic::nix_store::{NixStore, StorePath};
@@ -32,28 +32,16 @@ pub struct State {
 pub async fn init_cache(
     environment: Environment,
     flakehub_api_server: &Url,
-    flakehub_api_server_netrc: &Path,
     flakehub_cache_server: &Url,
     flakehub_flake_name: Option<String>,
     store: Arc<NixStore>,
-    using_dnixd: bool,
+    auth_method: &super::FlakeHubAuthSource,
 ) -> Result<State> {
-    if using_dnixd {
-        let dnixd_state_dir: &Path = Path::new(&crate::DETERMINATE_STATE_DIR);
-        let expected_netrc_path = dnixd_state_dir.join("netrc");
-        if flakehub_api_server_netrc != expected_netrc_path {
-            let err = format!("flakehub-api-server-netrc was ({}), expected ({}) since determinate-nixd is available", flakehub_api_server_netrc.display(), expected_netrc_path.display());
-            return Err(error::Error::Config(err));
-        }
-    }
     // Parse netrc to get the credentials for api.flakehub.com.
     let netrc = {
-        let mut netrc_file = File::open(flakehub_api_server_netrc).await.map_err(|e| {
-            Error::Internal(format!(
-                "Failed to open {}: {}",
-                flakehub_api_server_netrc.display(),
-                e
-            ))
+        let netrc_path = auth_method.as_path_buf();
+        let mut netrc_file = File::open(&netrc_path).await.map_err(|e| {
+            Error::Internal(format!("Failed to open {}: {}", netrc_path.display(), e))
         })?;
         let mut netrc_contents = String::new();
         netrc_file
@@ -62,7 +50,7 @@ pub async fn init_cache(
             .map_err(|e| {
                 Error::Internal(format!(
                     "Failed to read {} contents: {}",
-                    flakehub_api_server_netrc.display(),
+                    netrc_path.display(),
                     e
                 ))
             })?;
@@ -99,7 +87,7 @@ pub async fn init_cache(
         ))
     })?;
 
-    if !using_dnixd {
+    if let super::FlakeHubAuthSource::Netrc(netrc_path) = auth_method {
         // Append an entry for the FlakeHub cache server to netrc.
         if !netrc
             .machines
@@ -109,12 +97,12 @@ pub async fn init_cache(
             let mut netrc_file = tokio::fs::OpenOptions::new()
                 .create(false)
                 .append(true)
-                .open(flakehub_api_server_netrc)
+                .open(netrc_path)
                 .await
                 .map_err(|e| {
                     Error::Internal(format!(
                         "Failed to open {} for appending: {}",
-                        flakehub_api_server_netrc.display(),
+                        netrc_path.display(),
                         e
                     ))
                 })?;
@@ -131,7 +119,7 @@ pub async fn init_cache(
                 .map_err(|e| {
                     Error::Internal(format!(
                         "Failed to write credentials to {}: {}",
-                        flakehub_api_server_netrc.display(),
+                        netrc_path.display(),
                         e
                     ))
                 })?;
@@ -149,23 +137,25 @@ pub async fn init_cache(
 
     // Periodically refresh JWT in GitHub Actions environment
     if environment.is_github_actions() {
-        // NOTE(cole-h): This is a workaround -- at the time of writing, GitHub Actions JWTs are only
-        // valid for 5 minutes after being issued. FlakeHub uses these JWTs for authentication, which
-        // means that after those 5 minutes have passed and the token is expired, FlakeHub (and by
-        // extension FlakeHub Cache) will no longer allow requests using this token. However, GitHub
-        // gives us a way to repeatedly request new tokens, so we utilize that and refresh the token
-        // every 2 minutes (less than half of the lifetime of the token).
-        let netrc_path_clone = flakehub_api_server_netrc.to_path_buf();
-        let initial_github_jwt_clone = flakehub_password.clone();
-        let flakehub_cache_server_clone = flakehub_cache_server.to_string();
-        let api_clone = api.clone();
+        if let super::FlakeHubAuthSource::Netrc(path) = auth_method {
+            // NOTE(cole-h): This is a workaround -- at the time of writing, GitHub Actions JWTs are only
+            // valid for 5 minutes after being issued. FlakeHub uses these JWTs for authentication, which
+            // means that after those 5 minutes have passed and the token is expired, FlakeHub (and by
+            // extension FlakeHub Cache) will no longer allow requests using this token. However, GitHub
+            // gives us a way to repeatedly request new tokens, so we utilize that and refresh the token
+            // every 2 minutes (less than half of the lifetime of the token).
+            let netrc_path_clone = path.to_path_buf();
+            let initial_github_jwt_clone = flakehub_password.clone();
+            let flakehub_cache_server_clone = flakehub_cache_server.to_string();
+            let api_clone = api.clone();
 
-        tokio::task::spawn(refresh_github_actions_jwt_worker(
-            netrc_path_clone,
-            initial_github_jwt_clone,
-            flakehub_cache_server_clone,
-            api_clone,
-        ));
+            tokio::task::spawn(refresh_github_actions_jwt_worker(
+                netrc_path_clone,
+                initial_github_jwt_clone,
+                flakehub_cache_server_clone,
+                api_clone,
+            ));
+        }
     }
 
     // Get the cache UUID for this project.
