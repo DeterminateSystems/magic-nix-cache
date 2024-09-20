@@ -116,7 +116,7 @@ pub struct FileAllocation(CacheId);
 /// The ID of a cache.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(transparent)]
-struct CacheId(pub i32);
+struct CacheId(pub i64);
 
 /// An API error.
 #[derive(Debug, Clone)]
@@ -543,10 +543,13 @@ impl Api {
     }
 
     fn construct_url(&self, resource: &str) -> String {
-        format!(
-            "{}/_apis/artifactcache/{}",
-            self.credentials.cache_url, resource
-        )
+        let mut url = self.credentials.cache_url.clone();
+        if !url.ends_with('/') {
+            url.push('/');
+        }
+        url.push_str("_apis/artifactcache/");
+        url.push_str(resource);
+        url
     }
 }
 
