@@ -114,7 +114,7 @@ struct Args {
 
     /// Whether to use the FlakeHub binary cache.
     #[arg(long)]
-    use_flakehub: Option<bool>,
+    use_flakehub: Option<Option<FlakeHubArg>>,
 
     /// URL to which to post startup notification.
     #[arg(long)]
@@ -130,18 +130,18 @@ struct Args {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, clap::ValueEnum)]
-pub enum FlakehubArg {
+pub enum FlakeHubArg {
     NoPreference,
     Enabled,
     Disabled,
 }
 
-impl From<Option<bool>> for FlakehubArg {
-    fn from(b: Option<bool>) -> Self {
+impl From<Option<Option<FlakeHubArg>>> for FlakeHubArg {
+    fn from(b: Option<Option<FlakeHubArg>>) -> Self {
         match b {
-            None => FlakehubArg::NoPreference,
-            Some(true) => FlakehubArg::Enabled,
-            Some(false) => FlakehubArg::Disabled,
+            None => FlakeHubArg::NoPreference,
+            Some(None) => FlakeHubArg::Enabled,
+            Some(Some(v)) => v,
         }
     }
 }
@@ -170,7 +170,7 @@ impl Args {
             )));
         }
 
-        if environment.is_gitlab_ci() && self.flakehub_preference() != FlakehubArg::Enabled {
+        if environment.is_gitlab_ci() && self.flakehub_preference() != FlakeHubArg::Enabled {
             return Err(error::Error::Config(String::from(
                 "you must set --use-flakehub in GitLab CI",
             )));
@@ -179,7 +179,7 @@ impl Args {
         Ok(())
     }
 
-    fn flakehub_preference(&self) -> FlakehubArg {
+    fn flakehub_preference(&self) -> FlakeHubArg {
         self.use_flakehub.into()
     }
 }
@@ -286,18 +286,18 @@ async fn main_cli() -> Result<()> {
         &args.flakehub_api_server_netrc,
         dnixd_available,
     ) {
-        // User has explicitly pyassed --use-flakehub=false, so just straight up don't
-        (FlakehubArg::Disabled, _, _) => {
+        // User has explicitly pyassed --use-flakehub=disabled, so just straight up don't
+        (FlakeHubArg::Disabled, _, _) => {
             tracing::info!("Disabling FlakeHub cache.");
             None
         }
 
         // User has no preference, did not pass a netrc, and determinate-nixd is not available
-        (FlakehubArg::NoPreference, None, Dnixd::Missing) => None,
+        (FlakeHubArg::NoPreference, None, Dnixd::Missing) => None,
 
         // Use it when determinate-nixd is available, and let the user know what's going on
         (pref, user_netrc_path, Dnixd::Available) => {
-            if pref == FlakehubArg::NoPreference {
+            if pref == FlakeHubArg::NoPreference {
                 tracing::info!("Enabling FlakeHub cache because determinate-nixd is available.");
             }
 
@@ -312,7 +312,7 @@ async fn main_cli() -> Result<()> {
         (_, Some(path), Dnixd::Missing) => Some(FlakeHubAuthSource::Netrc(path.to_owned())),
 
         // User explicitly turned on flakehub cache, but we have no netrc and determinate-nixd is not present
-        (FlakehubArg::Enabled, None, Dnixd::Missing) => {
+        (FlakeHubArg::Enabled, None, Dnixd::Missing) => {
             return Err(anyhow!(
                 "--flakehub-api-server-netrc is required when determinate-nixd is unavailable"
             ));
@@ -360,7 +360,7 @@ async fn main_cli() -> Result<()> {
         }
     } else {
         tracing::info!(
-            "FlakeHub cache is disabled, as the `use-flakehub` setting is set to `false`."
+            "FlakeHub cache is disabled."
         );
         None
     };
