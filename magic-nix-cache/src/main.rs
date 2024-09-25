@@ -146,6 +146,22 @@ impl From<Option<bool>> for FlakehubArg {
     }
 }
 
+#[derive(PartialEq, Clone, Copy)]
+pub enum Dnixd {
+    Available,
+    Missing,
+}
+
+impl From<bool> for Dnixd {
+    fn from(b: bool) -> Self {
+        if b {
+            Dnixd::Available
+        } else {
+            Dnixd::Missing
+        }
+    }
+}
+
 impl Args {
     fn validate(&self, environment: env::Environment) -> Result<(), error::Error> {
         if environment.is_gitlab_ci() && self.use_gha_cache {
@@ -240,7 +256,7 @@ async fn main_cli() -> Result<()> {
 
     let dnixd_uds_socket_dir: &Path = Path::new(&DETERMINATE_STATE_DIR);
     let dnixd_uds_socket_path = dnixd_uds_socket_dir.join(DETERMINATE_NIXD_SOCKET_NAME);
-    let dnixd_available = dnixd_uds_socket_path.exists();
+    let dnixd_available: Dnixd = dnixd_uds_socket_path.exists().into();
 
     let nix_conf_path: PathBuf = args.nix_conf.clone();
 
@@ -265,21 +281,45 @@ async fn main_cli() -> Result<()> {
 
     let narinfo_negative_cache = Arc::new(RwLock::new(HashSet::new()));
 
-    let auth_method: FlakeHubAuthSource = match (&args.flakehub_api_server_netrc, dnixd_available) {
-        (None, true) => FlakeHubAuthSource::DeterminateNixd,
-        (Some(_), true) => {
-            tracing::info!("Ignoring the user-specified --flakehub-api-server-netrc, in favor of the determinate-nixd netrc");
-            FlakeHubAuthSource::DeterminateNixd
+    let flakehub_auth_method: Option<FlakeHubAuthSource> = match (
+        args.flakehub_preference(),
+        &args.flakehub_api_server_netrc,
+        dnixd_available,
+    ) {
+        // User has explicitly pyassed --use-flakehub=false, so just straight up don't
+        (FlakehubArg::Disabled, _, _) => {
+            tracing::info!("Disabling FlakeHub cache.");
+            None
         }
-        (Some(path), false) => FlakeHubAuthSource::Netrc(path.to_owned()),
-        (None, false) => {
+
+        // User has no preference, did not pass a netrc, and determinate-nixd is not available
+        (FlakehubArg::NoPreference, None, Dnixd::Missing) => None,
+
+        // Use it when determinate-nixd is available, and let the user know what's going on
+        (pref, user_netrc_path, Dnixd::Available) => {
+            if pref == FlakehubArg::NoPreference {
+                tracing::info!("Enabling FlakeHub cache because determinate-nixd is available.");
+            }
+
+            if user_netrc_path.is_some() {
+                tracing::info!("Ignoring the user-specified --flakehub-api-server-netrc, in favor of the determinate-nixd netrc");
+            }
+
+            Some(FlakeHubAuthSource::DeterminateNixd)
+        }
+
+        // When determinate-nixd is not available, but the user specified a netrc
+        (_, Some(path), Dnixd::Missing) => Some(FlakeHubAuthSource::Netrc(path.to_owned())),
+
+        // User explicitly turned on flakehub cache, but it we have no netrc and determinate-nixd is not present
+        (FlakehubArg::Enabled, None, Dnixd::Missing) => {
             return Err(anyhow!(
                 "--flakehub-api-server-netrc is required when determinate-nixd is unavailable"
             ));
         }
     };
 
-    let flakehub_state = if args.flakehub_preference() == FlakehubArg::Enabled {
+    let flakehub_state = if let Some(auth_method) = flakehub_auth_method {
         let flakehub_cache_server = args.flakehub_cache_server;
 
         let flakehub_api_server = &args.flakehub_api_server;
@@ -377,7 +417,7 @@ async fn main_cli() -> Result<()> {
         original_paths,
     });
 
-    if dnixd_available {
+    if dnixd_available == Dnixd::Available {
         tracing::info!("Subscribing to Determinate Nixd build events.");
         crate::pbh::subscribe_uds_post_build_hook(dnixd_uds_socket_path, state.clone()).await?;
     } else {
