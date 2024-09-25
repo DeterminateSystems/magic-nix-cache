@@ -359,9 +359,7 @@ async fn main_cli() -> Result<()> {
             }
         }
     } else {
-        tracing::info!(
-            "FlakeHub cache is disabled."
-        );
+        tracing::info!("FlakeHub cache is disabled.");
         None
     };
 
