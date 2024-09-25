@@ -311,7 +311,7 @@ async fn main_cli() -> Result<()> {
         // When determinate-nixd is not available, but the user specified a netrc
         (_, Some(path), Dnixd::Missing) => Some(FlakeHubAuthSource::Netrc(path.to_owned())),
 
-        // User explicitly turned on flakehub cache, but it we have no netrc and determinate-nixd is not present
+        // User explicitly turned on flakehub cache, but we have no netrc and determinate-nixd is not present
         (FlakehubArg::Enabled, None, Dnixd::Missing) => {
             return Err(anyhow!(
                 "--flakehub-api-server-netrc is required when determinate-nixd is unavailable"
