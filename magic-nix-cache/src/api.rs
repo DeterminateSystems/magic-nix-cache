@@ -102,6 +102,8 @@ async fn workflow_finish(
     if let Some(attic_state) = state.flakehub_state.write().await.take() {
         tracing::info!("Waiting for FlakeHub cache uploads to finish");
         let _paths = attic_state.push_session.wait().await?;
+    } else {
+        tracing::info!("NOT Waiting for FlakeHub cache uploads to finish");
     }
 
     if let Some(sender) = state.shutdown_sender.lock().await.take() {
