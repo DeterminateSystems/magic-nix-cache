@@ -10,7 +10,7 @@ permissions:
   contents: read
   id-token: write
 steps:
-  - uses: actions/checkout@v3
+  - uses: actions/checkout@v4
   - uses: DeterminateSystems/nix-installer-action@main
   - uses: DeterminateSystems/magic-nix-cache-action@main
   - run: nix flake check
@@ -52,7 +52,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - run: nix flake check
