@@ -354,7 +354,7 @@ async fn main_cli() -> Result<()> {
                 Some(state)
             }
             Err(err) => {
-                tracing::debug!("FlakeHub cache initialization failed: {}", err);
+                tracing::error!("FlakeHub cache initialization failed: {}", err);
                 None
             }
         }

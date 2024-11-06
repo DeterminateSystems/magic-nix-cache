@@ -99,15 +99,21 @@ async fn workflow_finish(
         gha_cache.shutdown().await?;
     }
 
+    if let Some(attic_state) = state.flakehub_state.write().await.take() {
+        tracing::info!("Waiting for FlakeHub cache uploads to finish");
+        let paths = attic_state.push_session.wait().await?;
+
+        let paths = paths.keys().map(|s| s.name()).collect::<Vec<_>>();
+
+        tracing::info!(?paths, "FlakeHub Cache uploads completed");
+    } else {
+        tracing::info!("FlakeHub cache is not enabled, not uploading anything to it");
+    }
+
     if let Some(sender) = state.shutdown_sender.lock().await.take() {
         sender
             .send(())
             .map_err(|_| Error::Internal("Sending shutdown server message".to_owned()))?;
-    }
-
-    if let Some(attic_state) = state.flakehub_state.write().await.take() {
-        tracing::info!("Waiting for FlakeHub cache uploads to finish");
-        let _paths = attic_state.push_session.wait().await?;
     }
 
     // NOTE(cole-h): see `init_logging`
