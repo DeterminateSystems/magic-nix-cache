@@ -313,7 +313,14 @@ async fn main_cli() -> Result<()> {
         }
 
         // When determinate-nixd is not available, but the user specified a netrc
-        (_, Some(path), Dnixd::Missing) => Some(FlakeHubAuthSource::Netrc(path.to_owned())),
+        (_, Some(path), Dnixd::Missing) => {
+            if path.exists() {
+                Some(FlakeHubAuthSource::Netrc(path.to_owned()))
+            } else {
+                tracing::debug!(path = %path.display(), "User-provided netrc does not exist");
+                None
+            }
+        }
 
         // User explicitly turned on flakehub cache, but we have no netrc and determinate-nixd is not present
         (CacheTrinary::Enabled, None, Dnixd::Missing) => {
