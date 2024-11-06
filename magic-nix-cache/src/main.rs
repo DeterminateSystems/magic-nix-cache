@@ -110,7 +110,7 @@ struct Args {
 
     /// Whether to use the GHA cache.
     #[arg(long)]
-    use_gha_cache: bool,
+    use_gha_cache: Option<Option<CacheTrinary>>,
 
     /// Whether to use the FlakeHub binary cache.
     #[arg(long)]
@@ -164,7 +164,7 @@ impl From<bool> for Dnixd {
 
 impl Args {
     fn validate(&self, environment: env::Environment) -> Result<(), error::Error> {
-        if environment.is_gitlab_ci() && self.use_gha_cache {
+        if environment.is_gitlab_ci() && self.github_cache_preference() == CacheTrinary::Enabled {
             return Err(error::Error::Config(String::from(
                 "the --use-gha-cache flag should not be applied in GitLab CI",
             )));
@@ -177,6 +177,10 @@ impl Args {
         }
 
         Ok(())
+    }
+
+    fn github_cache_preference(&self) -> CacheTrinary {
+        self.use_gha_cache.into()
     }
 
     fn flakehub_preference(&self) -> CacheTrinary {
@@ -320,16 +324,16 @@ async fn main_cli() -> Result<()> {
     };
 
     let flakehub_state = if let Some(auth_method) = flakehub_auth_method {
-        let flakehub_cache_server = args.flakehub_cache_server;
+        let flakehub_cache_server = &args.flakehub_cache_server;
 
         let flakehub_api_server = &args.flakehub_api_server;
 
-        let flakehub_flake_name = args.flakehub_flake_name;
+        let flakehub_flake_name = &args.flakehub_flake_name;
 
         match flakehub::init_cache(
             environment,
             flakehub_api_server,
-            &flakehub_cache_server,
+            flakehub_cache_server,
             flakehub_flake_name,
             store.clone(),
             &auth_method,
@@ -363,7 +367,7 @@ async fn main_cli() -> Result<()> {
         None
     };
 
-    let gha_cache = if args.use_gha_cache {
+    let gha_cache = if args.github_cache_preference() != CacheTrinary::Disabled {
         tracing::info!("Loading credentials from environment");
 
         let credentials = Credentials::load_from_env()
