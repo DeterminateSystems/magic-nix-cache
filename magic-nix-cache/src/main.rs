@@ -110,11 +110,11 @@ struct Args {
 
     /// Whether to use the GHA cache.
     #[arg(long)]
-    use_gha_cache: bool,
+    use_gha_cache: Option<Option<CacheTrinary>>,
 
     /// Whether to use the FlakeHub binary cache.
     #[arg(long)]
-    use_flakehub: Option<Option<FlakeHubArg>>,
+    use_flakehub: Option<Option<CacheTrinary>>,
 
     /// URL to which to post startup notification.
     #[arg(long)]
@@ -130,17 +130,17 @@ struct Args {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, clap::ValueEnum)]
-pub enum FlakeHubArg {
+pub enum CacheTrinary {
     NoPreference,
     Enabled,
     Disabled,
 }
 
-impl From<Option<Option<FlakeHubArg>>> for FlakeHubArg {
-    fn from(b: Option<Option<FlakeHubArg>>) -> Self {
+impl From<Option<Option<CacheTrinary>>> for CacheTrinary {
+    fn from(b: Option<Option<CacheTrinary>>) -> Self {
         match b {
-            None => FlakeHubArg::NoPreference,
-            Some(None) => FlakeHubArg::Enabled,
+            None => CacheTrinary::NoPreference,
+            Some(None) => CacheTrinary::Enabled,
             Some(Some(v)) => v,
         }
     }
@@ -164,13 +164,13 @@ impl From<bool> for Dnixd {
 
 impl Args {
     fn validate(&self, environment: env::Environment) -> Result<(), error::Error> {
-        if environment.is_gitlab_ci() && self.use_gha_cache {
+        if environment.is_gitlab_ci() && self.github_cache_preference() == CacheTrinary::Enabled {
             return Err(error::Error::Config(String::from(
                 "the --use-gha-cache flag should not be applied in GitLab CI",
             )));
         }
 
-        if environment.is_gitlab_ci() && self.flakehub_preference() != FlakeHubArg::Enabled {
+        if environment.is_gitlab_ci() && self.flakehub_preference() != CacheTrinary::Enabled {
             return Err(error::Error::Config(String::from(
                 "you must set --use-flakehub in GitLab CI",
             )));
@@ -179,7 +179,11 @@ impl Args {
         Ok(())
     }
 
-    fn flakehub_preference(&self) -> FlakeHubArg {
+    fn github_cache_preference(&self) -> CacheTrinary {
+        self.use_gha_cache.into()
+    }
+
+    fn flakehub_preference(&self) -> CacheTrinary {
         self.use_flakehub.into()
     }
 }
@@ -287,17 +291,17 @@ async fn main_cli() -> Result<()> {
         dnixd_available,
     ) {
         // User has explicitly pyassed --use-flakehub=disabled, so just straight up don't
-        (FlakeHubArg::Disabled, _, _) => {
+        (CacheTrinary::Disabled, _, _) => {
             tracing::info!("Disabling FlakeHub cache.");
             None
         }
 
         // User has no preference, did not pass a netrc, and determinate-nixd is not available
-        (FlakeHubArg::NoPreference, None, Dnixd::Missing) => None,
+        (CacheTrinary::NoPreference, None, Dnixd::Missing) => None,
 
         // Use it when determinate-nixd is available, and let the user know what's going on
         (pref, user_netrc_path, Dnixd::Available) => {
-            if pref == FlakeHubArg::NoPreference {
+            if pref == CacheTrinary::NoPreference {
                 tracing::info!("Enabling FlakeHub cache because determinate-nixd is available.");
             }
 
@@ -309,10 +313,17 @@ async fn main_cli() -> Result<()> {
         }
 
         // When determinate-nixd is not available, but the user specified a netrc
-        (_, Some(path), Dnixd::Missing) => Some(FlakeHubAuthSource::Netrc(path.to_owned())),
+        (_, Some(path), Dnixd::Missing) => {
+            if path.exists() {
+                Some(FlakeHubAuthSource::Netrc(path.to_owned()))
+            } else {
+                tracing::debug!(path = %path.display(), "User-provided netrc does not exist");
+                None
+            }
+        }
 
         // User explicitly turned on flakehub cache, but we have no netrc and determinate-nixd is not present
-        (FlakeHubArg::Enabled, None, Dnixd::Missing) => {
+        (CacheTrinary::Enabled, None, Dnixd::Missing) => {
             return Err(anyhow!(
                 "--flakehub-api-server-netrc is required when determinate-nixd is unavailable"
             ));
@@ -320,16 +331,16 @@ async fn main_cli() -> Result<()> {
     };
 
     let flakehub_state = if let Some(auth_method) = flakehub_auth_method {
-        let flakehub_cache_server = args.flakehub_cache_server;
+        let flakehub_cache_server = &args.flakehub_cache_server;
 
         let flakehub_api_server = &args.flakehub_api_server;
 
-        let flakehub_flake_name = args.flakehub_flake_name;
+        let flakehub_flake_name = &args.flakehub_flake_name;
 
         match flakehub::init_cache(
             environment,
             flakehub_api_server,
-            &flakehub_cache_server,
+            flakehub_cache_server,
             flakehub_flake_name,
             store.clone(),
             &auth_method,
@@ -363,7 +374,10 @@ async fn main_cli() -> Result<()> {
         None
     };
 
-    let gha_cache = if args.use_gha_cache {
+    let gha_cache = if (args.github_cache_preference() == CacheTrinary::Enabled)
+        || (args.github_cache_preference() == CacheTrinary::NoPreference
+            && flakehub_state.is_none())
+    {
         tracing::info!("Loading credentials from environment");
 
         let credentials = Credentials::load_from_env()

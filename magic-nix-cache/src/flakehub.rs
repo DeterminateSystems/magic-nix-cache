@@ -33,7 +33,7 @@ pub async fn init_cache(
     environment: Environment,
     flakehub_api_server: &Url,
     flakehub_cache_server: &Url,
-    flakehub_flake_name: Option<String>,
+    flakehub_flake_name: &Option<String>,
     store: Arc<NixStore>,
     auth_method: &super::FlakeHubAuthSource,
 ) -> Result<State> {

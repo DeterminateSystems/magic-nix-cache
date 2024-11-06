@@ -72,7 +72,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@main
 
       - name: Test magic-nix-cache-action@main on ${{ matrix.systems.runner }}
-        uses: DeterminateSystems/magic-nix-cache-action@main
+        uses: DeterminateSystems/magic-nix-cache-action@graham/fh-433-magic-nix-cache-should-disable-github-actions-cache-if
         with:
           source-binary: "${{ env.ARTIFACT_KEY }}/${{ env.ARCHIVE_NAME }}"
           _internal-strict-mode: true
