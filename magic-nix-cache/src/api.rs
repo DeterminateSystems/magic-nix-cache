@@ -105,7 +105,7 @@ async fn workflow_finish(
 
         let paths = paths.keys().map(|s| s.name()).collect::<Vec<_>>();
 
-        tracing::info!(?paths, "FlakeHub Cache uploads completed.",);
+        tracing::info!(?paths, "FlakeHub Cache uploads completed");
     } else {
         tracing::info!("FlakeHub cache is not enabled, not uploading anything to it");
     }
