@@ -367,7 +367,10 @@ async fn main_cli() -> Result<()> {
         None
     };
 
-    let gha_cache = if args.github_cache_preference() != CacheTrinary::Disabled {
+    let gha_cache = if (args.github_cache_preference() == CacheTrinary::Enabled)
+        || (args.github_cache_preference() == CacheTrinary::NoPreference
+            && flakehub_state.is_none())
+    {
         tracing::info!("Loading credentials from environment");
 
         let credentials = Credentials::load_from_env()
