@@ -21,6 +21,8 @@ pub struct GhaCache {
     worker_result: RwLock<Option<tokio::task::JoinHandle<Result<()>>>>,
 
     channel_tx: UnboundedSender<Request>,
+
+    compute_closure: bool,
 }
 
 #[derive(Debug)]
@@ -36,6 +38,7 @@ impl GhaCache {
         store: Arc<NixStore>,
         metrics: Arc<telemetry::TelemetryReport>,
         narinfo_negative_cache: Arc<RwLock<HashSet<String>>>,
+        compute_closure: bool,
     ) -> Result<GhaCache> {
         let mut api = Api::new(credentials)?;
 
@@ -64,6 +67,7 @@ impl GhaCache {
             api,
             worker_result: RwLock::new(Some(worker_result)),
             channel_tx,
+            compute_closure,
         })
     }
 
@@ -85,18 +89,18 @@ impl GhaCache {
         store: Arc<NixStore>,
         store_paths: Vec<StorePath>,
     ) -> Result<()> {
-        // FIXME: make sending the closure optional. We might want to
-        // only send the paths that have been built by the user, under
-        // the assumption that everything else is already in a binary
-        // cache.
-        // FIXME: compute_fs_closure_multi doesn't return a
-        // toposort, though it doesn't really matter for the GHA
-        // cache.
-        let closure = store
-            .compute_fs_closure_multi(store_paths, false, false, false)
-            .await?;
+        let final_paths = if self.compute_closure {
+            // FIXME: compute_fs_closure_multi doesn't return a
+            // toposort, though it doesn't really matter for the GHA
+            // cache.
+            store
+                .compute_fs_closure_multi(store_paths, false, false, false)
+                .await?
+        } else {
+            store_paths
+        };
 
-        for p in closure {
+        for p in final_paths {
             self.channel_tx
                 .send(Request::Upload(p))
                 .map_err(|_| Error::Internal("Cannot send upload message".to_owned()))?;
