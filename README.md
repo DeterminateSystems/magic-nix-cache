@@ -76,6 +76,7 @@ error: unable to download 'http://127.0.0.1:37515/<...>': HTTP error 418
 The caching daemon and Nix both handle this gracefully, and won't cause your CI to fail.
 When the rate limit is exceeded while pulling dependencies, your workflow may perform more builds than usual.
 When the rate limit is exceeded while uploading to the cache, the remainder of those store paths will be uploaded on the next run of the workflow.
+If the job fails or is canceled, any successfully built paths will be stored in the Magic Nix Cache (via [`runs.post`](https://docs.github.com/en/actions/sharing-automations/creating-actions/metadata-syntax-for-github-actions#runspost)).
 
 ## Development
 
