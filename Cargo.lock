@@ -239,7 +239,7 @@ dependencies = [
 [[package]]
 name = "attic"
 version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#635753a2069d4b8228e846dc5c09ad361c75cd1a"
+source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#0a8d39427498b33c6fac4610faa2406ba83653aa"
 dependencies = [
  "async-stream",
  "base64 0.22.1",
@@ -262,6 +262,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "tokio",
+ "tracing",
  "wildmatch",
  "xdg",
 ]
@@ -269,7 +270,7 @@ dependencies = [
 [[package]]
 name = "attic-client"
 version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#635753a2069d4b8228e846dc5c09ad361c75cd1a"
+source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#0a8d39427498b33c6fac4610faa2406ba83653aa"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -300,7 +301,7 @@ dependencies = [
 [[package]]
 name = "attic-server"
 version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#635753a2069d4b8228e846dc5c09ad361c75cd1a"
+source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#0a8d39427498b33c6fac4610faa2406ba83653aa"
 dependencies = [
  "anyhow",
  "async-compression",
@@ -352,7 +353,7 @@ dependencies = [
 [[package]]
 name = "attic-token"
 version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#635753a2069d4b8228e846dc5c09ad361c75cd1a"
+source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#0a8d39427498b33c6fac4610faa2406ba83653aa"
 dependencies = [
  "attic",
  "base64 0.22.1",
@@ -4894,11 +4895,10 @@ checksum = "b6bc1c9ce2b5135ac7f93c72918fc37feb872bdc6a5533a8b85eb4b86bfdae52"
 
 [[package]]
 name = "tracing"
-version = "0.1.37"
+version = "0.1.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ce8c33a8d48bd45d624a6e523445fd21ec13d3653cd51f681abf67418f54eb8"
+checksum = "784e0ac535deb450455cbfa28a6f0df145ea1bb7ae51b821cf5e7927fdcfbdd0"
 dependencies = [
- "cfg-if",
  "log",
  "pin-project-lite",
  "tracing-attributes",
@@ -4919,9 +4919,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-attributes"
-version = "0.1.26"
+version = "0.1.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f4f31f56159e98206da9efd823404b79b6ef3143b4a7ab76e67b1751b25a4ab"
+checksum = "395ae124c09f9e6918a2310af6038fba074bcf474ac352496d5910dd59a2226d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4930,9 +4930,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-core"
-version = "0.1.31"
+version = "0.1.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0955b8137a1df6f1a2e9a37d8a6656291ff0297c1a97c24e0d8425fe2312f79a"
+checksum = "e672c95779cf947c5311f83787af4fa8fffd12fb27e4993211a84bdfd9610f9c"
 dependencies = [
  "once_cell",
  "valuable",
