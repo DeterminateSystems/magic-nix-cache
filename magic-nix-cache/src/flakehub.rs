@@ -1,5 +1,6 @@
 use crate::env::Environment;
 use crate::error::{Error, Result};
+use crate::DETERMINATE_NETRC_PATH;
 use anyhow::Context;
 use attic::cache::CacheName;
 use attic::nix_store::{NixStore, StorePath};
@@ -13,7 +14,8 @@ use attic_client::{
 use reqwest::header::HeaderValue;
 use reqwest::Url;
 use serde::Deserialize;
-use std::path::Path;
+use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -38,54 +40,13 @@ pub async fn init_cache(
     auth_method: &super::FlakeHubAuthSource,
 ) -> Result<State> {
     // Parse netrc to get the credentials for api.flakehub.com.
-    let netrc = {
-        let netrc_path = auth_method.as_path_buf();
-        let mut netrc_file = File::open(&netrc_path).await.map_err(|e| {
-            Error::Internal(format!("Failed to open {}: {}", netrc_path.display(), e))
-        })?;
-        let mut netrc_contents = String::new();
-        netrc_file
-            .read_to_string(&mut netrc_contents)
-            .await
-            .map_err(|e| {
-                Error::Internal(format!(
-                    "Failed to read {} contents: {}",
-                    netrc_path.display(),
-                    e
-                ))
-            })?;
-        netrc_rs::Netrc::parse(netrc_contents, false).map_err(Error::Netrc)?
-    };
-
-    let flakehub_netrc_entry = {
-        netrc
-            .machines
-            .iter()
-            .find(|machine| {
-                machine.name.as_ref() == flakehub_api_server.host().map(|x| x.to_string()).as_ref()
-            })
-            .ok_or_else(|| Error::MissingCreds(flakehub_api_server.to_string()))?
-            .to_owned()
-    };
-
-    let flakehub_cache_server_hostname = flakehub_cache_server
-        .host()
-        .ok_or_else(|| Error::BadUrl(flakehub_cache_server.to_owned()))?
-        .to_string();
-
-    let flakehub_login = flakehub_netrc_entry.login.as_ref().ok_or_else(|| {
-        Error::Config(format!(
-            "netrc file does not contain a login for '{}'",
-            flakehub_api_server
-        ))
-    })?;
-
-    let flakehub_password = flakehub_netrc_entry.password.ok_or_else(|| {
-        Error::Config(format!(
-            "netrc file does not contain a password for '{}'",
-            flakehub_api_server
-        ))
-    })?;
+    let netrc_path = auth_method.as_path_buf();
+    let NetrcInfo {
+        netrc,
+        flakehub_cache_server_hostname,
+        flakehub_login,
+        flakehub_password,
+    } = extract_info_from_netrc(&netrc_path, flakehub_api_server, flakehub_cache_server).await?;
 
     if let super::FlakeHubAuthSource::Netrc(netrc_path) = auth_method {
         // Append an entry for the FlakeHub cache server to netrc.
@@ -137,24 +98,50 @@ pub async fn init_cache(
 
     // Periodically refresh JWT in GitHub Actions environment
     if environment.is_github_actions() {
-        if let super::FlakeHubAuthSource::Netrc(path) = auth_method {
-            // NOTE(cole-h): This is a workaround -- at the time of writing, GitHub Actions JWTs are only
-            // valid for 5 minutes after being issued. FlakeHub uses these JWTs for authentication, which
-            // means that after those 5 minutes have passed and the token is expired, FlakeHub (and by
-            // extension FlakeHub Cache) will no longer allow requests using this token. However, GitHub
-            // gives us a way to repeatedly request new tokens, so we utilize that and refresh the token
-            // every 2 minutes (less than half of the lifetime of the token).
-            let netrc_path_clone = path.to_path_buf();
-            let initial_github_jwt_clone = flakehub_password.clone();
-            let flakehub_cache_server_clone = flakehub_cache_server.to_string();
-            let api_clone = api.clone();
+        match auth_method {
+            super::FlakeHubAuthSource::Netrc(path) => {
+                // NOTE(cole-h): This is a workaround -- at the time of writing, GitHub Actions JWTs are only
+                // valid for 5 minutes after being issued. FlakeHub uses these JWTs for authentication, which
+                // means that after those 5 minutes have passed and the token is expired, FlakeHub (and by
+                // extension FlakeHub Cache) will no longer allow requests using this token. However, GitHub
+                // gives us a way to repeatedly request new tokens, so we utilize that and refresh the token
+                // every 2 minutes (less than half of the lifetime of the token).
+                let netrc_path_clone = path.to_path_buf();
+                let initial_github_jwt_clone = flakehub_password.clone();
+                let flakehub_cache_server_clone = flakehub_cache_server.to_string();
+                let api_clone = api.clone();
 
-            tokio::task::spawn(refresh_github_actions_jwt_worker(
-                netrc_path_clone,
-                initial_github_jwt_clone,
-                flakehub_cache_server_clone,
-                api_clone,
-            ));
+                tokio::task::spawn(refresh_github_actions_jwt_worker(
+                    netrc_path_clone,
+                    initial_github_jwt_clone,
+                    flakehub_cache_server_clone,
+                    api_clone,
+                ));
+            }
+            crate::FlakeHubAuthSource::DeterminateNixd => {
+                // NOTE(cole-h): This is a workaround -- at the time of writing, determinate-nixd
+                // handles the GitHub Actions JWT refreshing for us, which means we don't know when
+                // this will happen. At the moment, it does it roughly every 2 minutes (less than
+                // half of the total lifetime of the issued token), so refreshing every 30 seconds
+                // is "fine".
+                let api_clone = api.clone();
+                let netrc_file = PathBuf::from(DETERMINATE_NETRC_PATH);
+                let flakehub_api_server_clone = flakehub_api_server.clone();
+                let flakehub_cache_server_clone = flakehub_cache_server.clone();
+
+                let initial_meta = tokio::fs::metadata(&netrc_file).await.map_err(|e| {
+                    Error::Io(e, format!("getting metadata of {}", netrc_file.display()))
+                })?;
+                let initial_inode = initial_meta.ino();
+
+                tokio::task::spawn(refresh_determinate_token_worker(
+                    netrc_file,
+                    initial_inode,
+                    flakehub_api_server_clone,
+                    flakehub_cache_server_clone,
+                    api_clone,
+                ));
+            }
         }
     }
 
@@ -232,6 +219,72 @@ pub async fn init_cache(
     };
 
     Ok(state)
+}
+
+#[derive(Debug)]
+struct NetrcInfo {
+    netrc: netrc_rs::Netrc,
+    flakehub_cache_server_hostname: String,
+    flakehub_login: String,
+    flakehub_password: String,
+}
+
+#[tracing::instrument]
+async fn extract_info_from_netrc(
+    netrc_path: &Path,
+    flakehub_api_server: &Url,
+    flakehub_cache_server: &Url,
+) -> Result<NetrcInfo> {
+    let netrc = {
+        let mut netrc_file = File::open(netrc_path).await.map_err(|e| {
+            Error::Internal(format!("Failed to open {}: {}", netrc_path.display(), e))
+        })?;
+        let mut netrc_contents = String::new();
+        netrc_file
+            .read_to_string(&mut netrc_contents)
+            .await
+            .map_err(|e| {
+                Error::Internal(format!(
+                    "Failed to read {} contents: {}",
+                    netrc_path.display(),
+                    e
+                ))
+            })?;
+        netrc_rs::Netrc::parse(netrc_contents, false).map_err(Error::Netrc)?
+    };
+
+    let flakehub_netrc_entry = netrc
+        .machines
+        .iter()
+        .find(|machine| {
+            machine.name.as_ref() == flakehub_api_server.host().map(|x| x.to_string()).as_ref()
+        })
+        .ok_or_else(|| Error::MissingCreds(flakehub_api_server.to_string()))?
+        .to_owned();
+
+    let flakehub_cache_server_hostname = flakehub_cache_server
+        .host()
+        .ok_or_else(|| Error::BadUrl(flakehub_cache_server.to_owned()))?
+        .to_string();
+    let flakehub_login = flakehub_netrc_entry.login.ok_or_else(|| {
+        Error::Config(format!(
+            "netrc file does not contain a login for '{}'",
+            flakehub_api_server
+        ))
+    })?;
+    let flakehub_password = flakehub_netrc_entry.password.ok_or_else(|| {
+        Error::Config(format!(
+            "netrc file does not contain a password for '{}'",
+            flakehub_api_server
+        ))
+    })?;
+
+    Ok(NetrcInfo {
+        netrc,
+        flakehub_cache_server_hostname,
+        flakehub_login,
+        flakehub_password,
+    })
 }
 
 pub async fn enqueue_paths(state: &State, store_paths: Vec<StorePath>) -> Result<()> {
@@ -366,4 +419,73 @@ async fn rewrite_github_actions_token(
         .with_context(|| format!("renaming {netrc_path_tmp:?} to {netrc_path:?}"))?;
 
     Ok(new_github_jwt_string)
+}
+
+#[tracing::instrument(skip_all)]
+async fn refresh_determinate_token_worker(
+    netrc_file: PathBuf,
+    mut inode: u64,
+    flakehub_api_server: Url,
+    flakehub_cache_server: Url,
+    api_clone: Arc<RwLock<ApiClient>>,
+) {
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+
+        let meta = tokio::fs::metadata(&netrc_file)
+            .await
+            .map_err(|e| Error::Io(e, format!("getting metadata of {}", netrc_file.display())));
+
+        let Ok(meta) = meta else {
+            tracing::error!(e = ?meta);
+            continue;
+        };
+
+        let current_inode = meta.ino();
+
+        if current_inode == inode {
+            tracing::debug!("current inode is the same, file didn't change");
+            continue;
+        }
+
+        tracing::debug!("current inode is different, file changed");
+        inode = current_inode;
+
+        let flakehub_password = match extract_info_from_netrc(
+            &netrc_file,
+            &flakehub_api_server,
+            &flakehub_cache_server,
+        )
+        .await
+        {
+            Ok(NetrcInfo {
+                flakehub_password, ..
+            }) => flakehub_password,
+            Err(e) => {
+                tracing::error!(?e, "Failed to extract auth info from netrc");
+                continue;
+            }
+        };
+
+        let server_config = ServerConfig {
+            endpoint: flakehub_cache_server.to_string(),
+            token: Some(attic_client::config::ServerTokenConfig::Raw {
+                token: flakehub_password,
+            }),
+        };
+
+        let new_api = ApiClient::from_server_config(server_config.clone());
+
+        let Ok(new_api) = new_api else {
+            tracing::error!(e = ?new_api, "Failed to construct new ApiClient");
+            continue;
+        };
+
+        {
+            let mut api_client = api_clone.write().await;
+            *api_client = new_api;
+        }
+
+        tracing::debug!("Stored new token in API client, sleeping for 30s");
+    }
 }
