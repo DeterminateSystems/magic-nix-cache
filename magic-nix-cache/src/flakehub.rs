@@ -100,12 +100,6 @@ pub async fn init_cache(
     if environment.is_github_actions() {
         match auth_method {
             super::FlakeHubAuthSource::Netrc(path) => {
-                // NOTE(cole-h): This is a workaround -- at the time of writing, GitHub Actions JWTs are only
-                // valid for 5 minutes after being issued. FlakeHub uses these JWTs for authentication, which
-                // means that after those 5 minutes have passed and the token is expired, FlakeHub (and by
-                // extension FlakeHub Cache) will no longer allow requests using this token. However, GitHub
-                // gives us a way to repeatedly request new tokens, so we utilize that and refresh the token
-                // every 2 minutes (less than half of the lifetime of the token).
                 let netrc_path_clone = path.to_path_buf();
                 let initial_github_jwt_clone = flakehub_password.clone();
                 let flakehub_cache_server_clone = flakehub_cache_server.to_string();
@@ -119,11 +113,6 @@ pub async fn init_cache(
                 ));
             }
             crate::FlakeHubAuthSource::DeterminateNixd => {
-                // NOTE(cole-h): This is a workaround -- at the time of writing, determinate-nixd
-                // handles the GitHub Actions JWT refreshing for us, which means we don't know when
-                // this will happen. At the moment, it does it roughly every 2 minutes (less than
-                // half of the total lifetime of the issued token), so refreshing every 30 seconds
-                // is "fine".
                 let api_clone = api.clone();
                 let netrc_file = PathBuf::from(DETERMINATE_NETRC_PATH);
                 let flakehub_api_server_clone = flakehub_api_server.clone();
@@ -302,6 +291,13 @@ async fn refresh_github_actions_jwt_worker(
     flakehub_cache_server_clone: String,
     api: Arc<RwLock<ApiClient>>,
 ) -> Result<()> {
+    // NOTE(cole-h): This is a workaround -- at the time of writing, GitHub Actions JWTs are only
+    // valid for 5 minutes after being issued. FlakeHub uses these JWTs for authentication, which
+    // means that after those 5 minutes have passed and the token is expired, FlakeHub (and by
+    // extension FlakeHub Cache) will no longer allow requests using this token. However, GitHub
+    // gives us a way to repeatedly request new tokens, so we utilize that and refresh the token
+    // every 2 minutes (less than half of the lifetime of the token).
+
     // TODO(cole-h): this should probably be half of the token's lifetime ((exp - iat) / 2), but
     // getting this is nontrivial so I'm not going to do it until GitHub changes the lifetime and
     // breaks this.
@@ -429,6 +425,11 @@ async fn refresh_determinate_token_worker(
     flakehub_cache_server: Url,
     api_clone: Arc<RwLock<ApiClient>>,
 ) {
+    // NOTE(cole-h): This is a workaround -- at the time of writing, determinate-nixd handles the
+    // GitHub Actions JWT refreshing for us, which means we don't know when this will happen. At the
+    // moment, it does it roughly every 2 minutes (less than half of the total lifetime of the
+    // issued token), so refreshing every 30 seconds is "fine".
+
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
 
