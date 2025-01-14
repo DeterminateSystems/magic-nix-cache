@@ -624,10 +624,16 @@ impl AtomicCircuitBreaker for AtomicBool {
     fn check_err(&self, e: &Error) {
         if let Error::ApiError {
             status: reqwest::StatusCode::TOO_MANY_REQUESTS,
-            info: ref _info,
+            ..
         } = e
         {
             tracing::info!("Disabling GitHub Actions Cache due to 429: Too Many Requests");
+            let msg = "\
+                Magic Nix Cache has exceeded GitHub Actions Cache's rate limit. \
+                Save more time and seamlessly share the builds across your team with FlakeHub Cache. \
+                See: https://flakehub.com/pricing\
+            ";
+            println!("::notice::{msg}");
             self.store(true, Ordering::Relaxed);
         }
     }
