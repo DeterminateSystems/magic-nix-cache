@@ -649,13 +649,6 @@ impl AtomicCircuitBreaker for AtomicBool {
         } = e
         {
             tracing::info!("Disabling GitHub Actions Cache due to 429: Too Many Requests");
-            let title = "Magic Nix Cache was rate-limited by GitHub Actions.";
-            let msg = "\
-                Turn Magic Nix Cache into a cache for your whole team. \
-                Move beyond GitHub's limits, save time, and share builds outside CI with FlakeHub Cache. \
-                See: https://dtr.mn/github-cache-limits\
-            ";
-            println!("::notice title={title}::{msg}");
             self.store(true, Ordering::Relaxed);
             callback();
         }
