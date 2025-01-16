@@ -28,6 +28,8 @@ pub struct TelemetryReport {
     pub num_original_paths: Metric,
     pub num_final_paths: Metric,
     pub num_new_paths: Metric,
+
+    pub tripped_429: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Debug, Default, serde::Serialize)]
