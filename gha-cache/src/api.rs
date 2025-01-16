@@ -48,6 +48,8 @@ const MAX_CONCURRENCY: usize = 4;
 
 type Result<T> = std::result::Result<T, Error>;
 
+pub type CircuitBreakerTrippedCallback = Arc<Box<dyn Fn() + Send + Sync>>;
+
 /// An API error.
 #[derive(Error, Debug)]
 pub enum Error {
@@ -82,7 +84,6 @@ pub enum Error {
     TooManyCollisions,
 }
 
-#[derive(Debug)]
 pub struct Api {
     /// Credentials to access the cache.
     credentials: Credentials,
@@ -103,6 +104,8 @@ pub struct Api {
     concurrency_limit: Arc<Semaphore>,
 
     circuit_breaker_429_tripped: Arc<AtomicBool>,
+
+    circuit_breaker_429_tripped_callback: CircuitBreakerTrippedCallback,
 
     /// Backend request statistics.
     #[cfg(debug_assertions)]
@@ -242,7 +245,10 @@ impl fmt::Display for ApiErrorInfo {
 }
 
 impl Api {
-    pub fn new(credentials: Credentials) -> Result<Self> {
+    pub fn new(
+        credentials: Credentials,
+        circuit_breaker_429_tripped_callback: CircuitBreakerTrippedCallback,
+    ) -> Result<Self> {
         let mut headers = HeaderMap::new();
         let auth_header = {
             let mut h = HeaderValue::from_str(&format!("Bearer {}", credentials.runtime_token))
@@ -273,6 +279,7 @@ impl Api {
             client,
             concurrency_limit: Arc::new(Semaphore::new(MAX_CONCURRENCY)),
             circuit_breaker_429_tripped: Arc::new(AtomicBool::from(false)),
+            circuit_breaker_429_tripped_callback,
             #[cfg(debug_assertions)]
             stats: Default::default(),
         })
@@ -366,6 +373,8 @@ impl Api {
                 let client = self.client.clone();
                 let concurrency_limit = self.concurrency_limit.clone();
                 let circuit_breaker_429_tripped = self.circuit_breaker_429_tripped.clone();
+                let circuit_breaker_429_tripped_callback =
+                    self.circuit_breaker_429_tripped_callback.clone();
                 let url = self.construct_url(&format!("caches/{}", allocation.0 .0));
 
                 tokio::task::spawn(async move {
@@ -402,7 +411,8 @@ impl Api {
 
                     drop(permit);
 
-                    circuit_breaker_429_tripped.check_result(&r);
+                    circuit_breaker_429_tripped
+                        .check_result(&r, &circuit_breaker_429_tripped_callback);
 
                     r
                 })
@@ -465,7 +475,8 @@ impl Api {
             .check_json()
             .await;
 
-        self.circuit_breaker_429_tripped.check_result(&res);
+        self.circuit_breaker_429_tripped
+            .check_result(&res, &self.circuit_breaker_429_tripped_callback);
 
         match res {
             Ok(entry) => Ok(Some(entry)),
@@ -508,7 +519,8 @@ impl Api {
             .check_json()
             .await;
 
-        self.circuit_breaker_429_tripped.check_result(&res);
+        self.circuit_breaker_429_tripped
+            .check_result(&res, &self.circuit_breaker_429_tripped_callback);
 
         res
     }
@@ -535,7 +547,8 @@ impl Api {
             .check()
             .await
         {
-            self.circuit_breaker_429_tripped.check_err(&e);
+            self.circuit_breaker_429_tripped
+                .check_err(&e, &self.circuit_breaker_429_tripped_callback);
             return Err(e);
         }
 
@@ -610,25 +623,41 @@ async fn handle_error(res: reqwest::Response) -> Error {
 }
 
 trait AtomicCircuitBreaker {
-    fn check_err(&self, e: &Error);
-    fn check_result<T>(&self, r: &std::result::Result<T, Error>);
+    fn check_err(&self, e: &Error, callback: &CircuitBreakerTrippedCallback);
+    fn check_result<T>(
+        &self,
+        r: &std::result::Result<T, Error>,
+        callback: &CircuitBreakerTrippedCallback,
+    );
 }
 
 impl AtomicCircuitBreaker for AtomicBool {
-    fn check_result<T>(&self, r: &std::result::Result<T, Error>) {
+    fn check_result<T>(
+        &self,
+        r: &std::result::Result<T, Error>,
+        callback: &CircuitBreakerTrippedCallback,
+    ) {
         if let Err(ref e) = r {
-            self.check_err(e)
+            self.check_err(e, callback)
         }
     }
 
-    fn check_err(&self, e: &Error) {
+    fn check_err(&self, e: &Error, callback: &CircuitBreakerTrippedCallback) {
         if let Error::ApiError {
             status: reqwest::StatusCode::TOO_MANY_REQUESTS,
-            info: ref _info,
+            ..
         } = e
         {
             tracing::info!("Disabling GitHub Actions Cache due to 429: Too Many Requests");
+            let title = "Magic Nix Cache was rate-limited by GitHub Actions.";
+            let msg = "\
+                Turn Magic Nix Cache into a cache for your whole team. \
+                Move beyond GitHub's limits, save time, and share builds outside CI with FlakeHub Cache. \
+                See: https://dtr.mn/github-cache-limits\
+            ";
+            println!("::notice title={title}::{msg}");
             self.store(true, Ordering::Relaxed);
+            callback();
         }
     }
 }
