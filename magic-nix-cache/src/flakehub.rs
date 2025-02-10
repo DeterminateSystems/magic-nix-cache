@@ -428,10 +428,10 @@ async fn refresh_determinate_token_worker(
     // NOTE(cole-h): This is a workaround -- at the time of writing, determinate-nixd handles the
     // GitHub Actions JWT refreshing for us, which means we don't know when this will happen. At the
     // moment, it does it roughly every 2 minutes (less than half of the total lifetime of the
-    // issued token), so refreshing every 30 seconds is "fine".
+    // issued token).
 
     loop {
-        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
         let meta = tokio::fs::metadata(&netrc_file)
             .await
