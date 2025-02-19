@@ -2,7 +2,7 @@
   description = "GitHub Actions-powered Nix binary cache";
 
   inputs = {
-    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.2311.tar.gz";
+    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1.tar.gz";
 
     fenix = {
       url = "https://flakehub.com/f/nix-community/fenix/0.1.1727.tar.gz";
@@ -16,7 +16,7 @@
 
     flake-compat.url = "https://flakehub.com/f/edolstra/flake-compat/1.0.1.tar.gz";
 
-    nix.url = "https://flakehub.com/f/NixOS/nix/=2.22.1.tar.gz";
+    nix.url = "https://flakehub.com/f/NixOS/nix/2.22.1.tar.gz";
   };
 
   outputs = { self, nixpkgs, fenix, crane, ... }@inputs:
@@ -32,7 +32,6 @@
         pkgs = import nixpkgs {
           inherit system;
           overlays = [
-            inputs.nix.overlays.default
             self.overlays.default
           ];
         };
@@ -73,7 +72,7 @@
             ];
 
             buildInputs = [
-              final.nix
+              inputs.nix.packages.${final.stdenv.hostPlatform}.default
               final.boost
             ] ++ final.lib.optionals final.stdenv.isDarwin [
               final.darwin.apple_sdk.frameworks.SystemConfiguration
