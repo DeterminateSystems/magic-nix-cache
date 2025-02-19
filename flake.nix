@@ -9,10 +9,9 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    crane = {
-      url = "https://flakehub.com/f/ipetkov/crane/0.16.3.tar.gz";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    # Pinned to `master` until a release containing
+    # <https://github.com/ipetkov/crane/pull/792> is cut.
+    crane.url = "github:ipetkov/crane";
 
     nix.url = "https://flakehub.com/f/NixOS/nix/2.tar.gz";
   };
