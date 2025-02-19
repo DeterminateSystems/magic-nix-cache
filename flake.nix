@@ -84,12 +84,10 @@
 
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
       in
-      rec {
+      {
         magic-nix-cache = craneLib.buildPackage (commonArgs // {
           inherit cargoArtifacts;
         });
-
-        default = magic-nix-cache;
       };
 
       packages = forEachSupportedSystem ({ pkgs, ... }: rec {
