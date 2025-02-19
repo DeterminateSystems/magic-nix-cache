@@ -72,7 +72,7 @@
             ];
 
             buildInputs = [
-              inputs.nix.packages.${final.stdenv.hostPlatform}.default
+              inputs.nix.packages.${final.stdenv.system}.default
               final.boost
             ] ++ final.lib.optionals final.stdenv.isDarwin [
               final.darwin.apple_sdk.frameworks.SystemConfiguration
