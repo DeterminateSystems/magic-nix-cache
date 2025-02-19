@@ -91,8 +91,8 @@ For local development, see `gha-cache/README.md` for more details on how to obta
 
 ```shell
 cargo run -- -c creds.json --upstream https://cache.nixos.org
-cargo build --release --target x86_64-unknown-linux-musl
-cargo build --release --target aarch64-unknown-linux-musl
+cargo build --release --target x86_64-unknown-linux-gnu
+cargo build --release --target aarch64-unknown-linux-gnu
 nix copy --to 'http://127.0.0.1:3000' $(which bash)
 nix-store --store $PWD/test-root --extra-substituters 'http://localhost:3000' --option require-sigs false -r $(which bash)
 ```
