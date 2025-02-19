@@ -51,12 +51,7 @@
             buildInputs = [
               inputs.nix.packages.${final.stdenv.system}.default
               final.boost
-            ] ++ final.lib.optionals final.stdenv.isDarwin [
-              final.darwin.apple_sdk.frameworks.SystemConfiguration
-              (final.libiconv.override { enableStatic = true; enableShared = false; })
             ];
-
-            NIX_CFLAGS_LINK = final.lib.optionalString final.stdenv.isDarwin "-lc++abi";
           };
 
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
@@ -123,12 +118,8 @@
             bacon
 
             age
-          ] ++ lib.optionals pkgs.stdenv.isDarwin [
-            libiconv
-            darwin.apple_sdk.frameworks.SystemConfiguration
           ];
 
-          NIX_CFLAGS_LINK = lib.optionalString pkgs.stdenv.isDarwin "-lc++abi";
           RUST_SRC_PATH = "${pkgs.rustPlatform.rustcSrc}/library";
         };
       });
