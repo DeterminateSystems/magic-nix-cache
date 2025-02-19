@@ -140,7 +140,7 @@
       },
       "original": {
         "type": "tarball",
-        "url": "https://flakehub.com/f/NixOS/nix/2.22.1.tar.gz"
+        "url": "https://flakehub.com/f/NixOS/nix/2.tar.gz"
       }
     },
     "nixpkgs": {
