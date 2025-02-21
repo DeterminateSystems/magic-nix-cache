@@ -106,7 +106,7 @@
             rustfmt
             rust-analyzer
 
-            nix # for linking attic
+            inputs.nix.packages.${stdenv.system}.default # for linking attic
             boost # for linking attic
             bashInteractive
             pkg-config
