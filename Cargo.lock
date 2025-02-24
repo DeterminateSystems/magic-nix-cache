@@ -239,7 +239,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 [[package]]
 name = "attic"
 version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#0a8d39427498b33c6fac4610faa2406ba83653aa"
+source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#f789ed4a186e136ea938c28551eaaf8081cc4496"
 dependencies = [
  "async-stream",
  "base64 0.22.1",
@@ -254,12 +254,12 @@ dependencies = [
  "lazy_static",
  "log",
  "nix-base32",
- "pkg-config",
  "regex",
  "serde",
  "serde_with",
  "serde_yaml",
  "sha2",
+ "system-deps",
  "tempfile",
  "tokio",
  "tracing",
@@ -270,7 +270,7 @@ dependencies = [
 [[package]]
 name = "attic-client"
 version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#0a8d39427498b33c6fac4610faa2406ba83653aa"
+source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#f789ed4a186e136ea938c28551eaaf8081cc4496"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -301,7 +301,7 @@ dependencies = [
 [[package]]
 name = "attic-server"
 version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#0a8d39427498b33c6fac4610faa2406ba83653aa"
+source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#f789ed4a186e136ea938c28551eaaf8081cc4496"
 dependencies = [
  "anyhow",
  "async-compression",
@@ -353,7 +353,7 @@ dependencies = [
 [[package]]
 name = "attic-token"
 version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#0a8d39427498b33c6fac4610faa2406ba83653aa"
+source = "git+https://github.com/DeterminateSystems/attic?branch=fixups-for-magic-nix-cache#f789ed4a186e136ea938c28551eaaf8081cc4496"
 dependencies = [
  "attic",
  "base64 0.22.1",
@@ -1072,6 +1072,16 @@ dependencies = [
  "jobserver",
  "libc",
  "shlex",
+]
+
+[[package]]
+name = "cfg-expr"
+version = "0.17.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d4ba6e40bd1184518716a6e1a781bf9160e286d219ccdb8ab2612e74cfe4789"
+dependencies = [
+ "smallvec",
+ "target-lexicon",
 ]
 
 [[package]]
@@ -4776,10 +4786,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "system-deps"
+version = "7.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66d23aaf9f331227789a99e8de4c91bf46703add012bdfd45fdecdfb2975a005"
+dependencies = [
+ "cfg-expr",
+ "heck 0.5.0",
+ "pkg-config",
+ "toml",
+ "version-compare",
+]
+
+[[package]]
 name = "tap"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
+
+[[package]]
+name = "target-lexicon"
+version = "0.12.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 
 [[package]]
 name = "tempfile"
@@ -5373,6 +5402,12 @@ name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
+
+[[package]]
+name = "version-compare"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "852e951cb7832cb45cb1169900d19760cfa39b82bc0ea9c0e5a14ae88411c98b"
 
 [[package]]
 name = "version_check"

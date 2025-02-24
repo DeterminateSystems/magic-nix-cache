@@ -4,22 +4,14 @@
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1.tar.gz";
 
-    fenix = {
-      url = "https://flakehub.com/f/nix-community/fenix/0.1.1727.tar.gz";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    crane = {
-      url = "https://flakehub.com/f/ipetkov/crane/0.16.3.tar.gz";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    flake-compat.url = "https://flakehub.com/f/edolstra/flake-compat/1.0.1.tar.gz";
+    # Pinned to `master` until a release containing
+    # <https://github.com/ipetkov/crane/pull/792> is cut.
+    crane.url = "github:ipetkov/crane";
 
     nix.url = "https://flakehub.com/f/NixOS/nix/2.tar.gz";
   };
 
-  outputs = { self, nixpkgs, fenix, crane, ... }@inputs:
+  outputs = { self, nixpkgs, crane, ... }@inputs:
     let
       supportedSystems = [
         "aarch64-linux"
@@ -38,27 +30,12 @@
         inherit (pkgs) lib;
         inherit system;
       });
-
-      fenixToolchain = system: with fenix.packages.${system};
-        combine ([
-          stable.clippy
-          stable.rustc
-          stable.cargo
-          stable.rustfmt
-          stable.rust-src
-          stable.rust-analyzer
-        ] ++ nixpkgs.lib.optionals (system == "x86_64-linux") [
-          targets.x86_64-unknown-linux-musl.stable.rust-std
-        ] ++ nixpkgs.lib.optionals (system == "aarch64-linux") [
-          targets.aarch64-unknown-linux-musl.stable.rust-std
-        ]);
     in
     {
 
       overlays.default = final: prev:
       let
-          toolchain = fenixToolchain final.hostPlatform.system;
-          craneLib = (crane.mkLib final).overrideToolchain toolchain;
+          craneLib = crane.mkLib final;
           crateName = craneLib.crateNameFromCargoToml {
             cargoToml = ./magic-nix-cache/Cargo.toml;
           };
@@ -74,22 +51,15 @@
             buildInputs = [
               inputs.nix.packages.${final.stdenv.system}.default
               final.boost
-            ] ++ final.lib.optionals final.stdenv.isDarwin [
-              final.darwin.apple_sdk.frameworks.SystemConfiguration
-              (final.libiconv.override { enableStatic = true; enableShared = false; })
             ];
-
-            NIX_CFLAGS_LINK = final.lib.optionalString final.stdenv.isDarwin "-lc++abi";
           };
 
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
       in
-      rec {
+      {
         magic-nix-cache = craneLib.buildPackage (commonArgs // {
           inherit cargoArtifacts;
         });
-
-        default = magic-nix-cache;
       };
 
       packages = forEachSupportedSystem ({ pkgs, ... }: rec {
@@ -127,16 +97,16 @@
           createChain 200 startFile;
       });
 
-      devShells = forEachSupportedSystem ({ system, pkgs, lib }:
-      let
-          toolchain = fenixToolchain system;
-      in
-      {
+      devShells = forEachSupportedSystem ({ system, pkgs, lib }: {
         default = pkgs.mkShell {
           packages = with pkgs; [
-            toolchain
+            rustc
+            cargo
+            clippy
+            rustfmt
+            rust-analyzer
 
-            nix # for linking attic
+            inputs.nix.packages.${stdenv.system}.default # for linking attic
             boost # for linking attic
             bashInteractive
             pkg-config
@@ -148,13 +118,9 @@
             bacon
 
             age
-          ] ++ lib.optionals pkgs.stdenv.isDarwin [
-            libiconv
-            darwin.apple_sdk.frameworks.SystemConfiguration
           ];
 
-          NIX_CFLAGS_LINK = lib.optionalString pkgs.stdenv.isDarwin "-lc++abi";
-          RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";
+          RUST_SRC_PATH = "${pkgs.rustPlatform.rustcSrc}/library";
         };
       });
     };
