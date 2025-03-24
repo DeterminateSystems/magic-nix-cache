@@ -2,13 +2,13 @@
   description = "GitHub Actions-powered Nix binary cache";
 
   inputs = {
-    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1.tar.gz";
+    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
 
     # Pinned to `master` until a release containing
     # <https://github.com/ipetkov/crane/pull/792> is cut.
     crane.url = "github:ipetkov/crane";
 
-    nix.url = "https://flakehub.com/f/NixOS/nix/2.tar.gz";
+    nix.url = "https://flakehub.com/f/NixOS/nix/2";
   };
 
   outputs = { self, nixpkgs, crane, ... }@inputs:
