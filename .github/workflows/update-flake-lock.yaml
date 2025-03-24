@@ -18,6 +18,3 @@ jobs:
           pr-labels: |
             dependencies
             automated
-          inputs: |
-            nixpkgs
-            nix

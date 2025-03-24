@@ -2,17 +2,16 @@
   "nodes": {
     "crane": {
       "locked": {
-        "lastModified": 1742394900,
-        "narHash": "sha256-vVOAp9ahvnU+fQoKd4SEXB2JG2wbENkpqcwlkIXgUC0=",
-        "owner": "ipetkov",
-        "repo": "crane",
-        "rev": "70947c1908108c0c551ddfd73d4f750ff2ea67cd",
-        "type": "github"
+        "lastModified": 1741479724,
+        "narHash": "sha256-fnyETBKSVRa5abjOiRG/IAzKZq5yX8U6oRrHstPl4VM=",
+        "rev": "60202a2e3597a3d91f5e791aab03f45470a738b5",
+        "revCount": 709,
+        "type": "tarball",
+        "url": "https://api.flakehub.com/f/pinned/ipetkov/crane/0.20.2/0195784b-915b-7d2d-915d-ab02d1112ef9/source.tar.gz"
       },
       "original": {
-        "owner": "ipetkov",
-        "repo": "crane",
-        "type": "github"
+        "type": "tarball",
+        "url": "https://flakehub.com/f/ipetkov/crane/%2A"
       }
     },
     "flake-compat": {

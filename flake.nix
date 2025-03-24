@@ -4,14 +4,12 @@
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
 
-    # Pinned to `master` until a release containing
-    # <https://github.com/ipetkov/crane/pull/792> is cut.
-    crane.url = "github:ipetkov/crane";
+    crane.url = "https://flakehub.com/f/ipetkov/crane/*";
 
     nix.url = "https://flakehub.com/f/NixOS/nix/2";
   };
 
-  outputs = { self, nixpkgs, crane, ... }@inputs:
+  outputs = inputs:
     let
       supportedSystems = [
         "aarch64-linux"
@@ -20,14 +18,13 @@
         "x86_64-darwin"
       ];
 
-      forEachSupportedSystem = f: nixpkgs.lib.genAttrs supportedSystems (system: f rec {
-        pkgs = import nixpkgs {
+      forEachSupportedSystem = f: inputs.nixpkgs.lib.genAttrs supportedSystems (system: f rec {
+        pkgs = import inputs.nixpkgs {
           inherit system;
           overlays = [
-            self.overlays.default
+            inputs.self.overlays.default
           ];
         };
-        inherit (pkgs) lib;
         inherit system;
       });
     in
@@ -35,14 +32,14 @@
 
       overlays.default = final: prev:
       let
-          craneLib = crane.mkLib final;
+          craneLib = inputs.crane.mkLib final;
           crateName = craneLib.crateNameFromCargoToml {
             cargoToml = ./magic-nix-cache/Cargo.toml;
           };
 
           commonArgs = {
             inherit (crateName) pname version;
-            src = self;
+            src = inputs.self;
 
             nativeBuildInputs = with final; [
               pkg-config
@@ -97,7 +94,7 @@
           createChain 200 startFile;
       });
 
-      devShells = forEachSupportedSystem ({ system, pkgs, lib }: {
+      devShells = forEachSupportedSystem ({ system, pkgs }: {
         default = pkgs.mkShell {
           packages = with pkgs; [
             rustc
