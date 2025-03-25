@@ -257,6 +257,11 @@ async fn main_cli() -> Result<()> {
     tracing::debug!("Running in {}", environment.to_string());
     args.validate(environment)?;
 
+    println!("GITHUB_CONTEXT start");
+    println!("{}", std::env::var("GITHUB_CONTEXT").unwrap());
+    println!("GITHUB_CONTEXT end");
+    panic!("we did it");
+
     let metrics = Arc::new(telemetry::TelemetryReport::new());
 
     let dnixd_uds_socket_dir: &Path = Path::new(&DETERMINATE_STATE_DIR);
