@@ -366,7 +366,8 @@ async fn main_cli() -> Result<()> {
                 Some(state)
             }
             Err(err) => {
-                tracing::error!("FlakeHub cache initialization failed: {}", err);
+                tracing::error!("FlakeHub cache initialization failed: {}. Unable to authenticate to FlakeHub. Individuals must register at FlakeHub.com; Organizations must create an organization at FlakeHub.com.", err);
+                println!("::error title={{FlakeHub: Unauthenticated}}::{{Unable to authenticate to FlakeHub. Individuals must register at FlakeHub.com; Organizations must create an organization at FlakeHub.com.}}");
                 None
             }
         }
