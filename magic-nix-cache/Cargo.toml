@@ -58,6 +58,7 @@ http-body-util = "0.1"
 hyper = { version = "1.0.0", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1"] }
 xdg = { version = "2.5.2" }
+color-eyre = { version = "0.6.3" }
 
 [dependencies.tokio]
 version = "1.28.0"

@@ -18,6 +18,7 @@ mod env;
 mod error;
 mod flakehub;
 mod gha;
+mod github;
 mod pbh;
 mod telemetry;
 mod util;
@@ -366,8 +367,11 @@ async fn main_cli() -> Result<()> {
                 Some(state)
             }
             Err(err) => {
-                tracing::error!("FlakeHub cache initialization failed: {}. Unable to authenticate to FlakeHub. Individuals must register at FlakeHub.com; Organizations must create an organization at FlakeHub.com.", err);
-                println!("::error title={{FlakeHub: Unauthenticated}}::{{Unable to authenticate to FlakeHub. Individuals must register at FlakeHub.com; Organizations must create an organization at FlakeHub.com.}}");
+                tracing::error!(
+                    "FlakeHub: cache initialized failed: Unauthenticated: {}",
+                    err
+                );
+                github::print_unauthenticated_error();
                 None
             }
         }
