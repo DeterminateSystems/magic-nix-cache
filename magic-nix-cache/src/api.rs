@@ -100,8 +100,13 @@ async fn workflow_finish(
     }
 
     if let Some(attic_state) = state.flakehub_state.write().await.take() {
+        tracing::warn!("DEBUG: sleeping for 10s before we try to exit");
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
         tracing::info!("Waiting for FlakeHub cache uploads to finish");
         let paths = attic_state.push_session.wait().await?;
+        tracing::warn!("DEBUG: sleeping for 10s before we try to exit");
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
         let paths = paths.keys().map(|s| s.name()).collect::<Vec<_>>();
 
