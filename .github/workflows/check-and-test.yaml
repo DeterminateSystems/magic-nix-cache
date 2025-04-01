@@ -86,6 +86,9 @@ jobs:
       - name: Run nix to test magic-nix-cache-action
         run: |
           nix develop --command echo "just testing"
+
+          nix build -f ./unstable.nix
+
       - name: Exhaust our GitHub Actions Cache tokens
         # Generally skip this step since it is so intensive
         if: ${{ false }}
