@@ -21,6 +21,7 @@ use crate::State;
 pub async fn subscribe_uds_post_build_hook(
     dnixd_uds_socket_path: PathBuf,
     state: State,
+    dnixd_flush_sender: Option<tokio::sync::mpsc::UnboundedSender<uuid::Uuid>>,
 ) -> Result<()> {
     tokio::spawn(async move {
         let dnixd_uds_socket_path = &dnixd_uds_socket_path;
@@ -79,6 +80,9 @@ pub async fn subscribe_uds_post_build_hook(
                     tracing::debug!("built-paths subscription: ignoring non-data frame");
                     continue;
                 };
+
+                // TODO: check for flush event of flush type - send it to the sender
+
                 let Ok(event): core::result::Result<BuiltPathResponseEventV1, _> =
                     serde_json::from_slice(event_str)
                 else {

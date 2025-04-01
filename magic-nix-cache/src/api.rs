@@ -94,6 +94,10 @@ async fn workflow_finish(
         }
     };
 
+    // maybe here send the request to Dnixd to Flush
+    // save uuid from response
+    // then wait on receiver until we get that same uuid back
+
     if let Some(gha_cache) = &state.gha_cache {
         tracing::info!("Waiting for GitHub action cache uploads to finish");
         gha_cache.shutdown().await?;
