@@ -85,9 +85,14 @@ jobs:
 
       - name: Run nix to test magic-nix-cache-action
         run: |
+          curl --no-buffer --unix-socket /nix/var/determinate/determinate-nixd.socket http://localhost/events > log.log 2>&1 &
           nix develop --command echo "just testing"
 
           nix build -f ./unstable.nix
+
+          cat log.log
+          sleep 1
+          cat log.log
 
       - name: Exhaust our GitHub Actions Cache tokens
         # Generally skip this step since it is so intensive
