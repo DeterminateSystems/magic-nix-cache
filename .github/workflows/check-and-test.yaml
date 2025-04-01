@@ -44,8 +44,13 @@ jobs:
     env:
       ARTIFACT_KEY: magic-nix-cache-${{ matrix.systems.system }}
       ARCHIVE_NAME: magic-nix-cache.closure.xz
+      RUNNER_DEBUG: 1
+      ACTIONS_RUNNER_DEBUG: 1
     strategy:
       matrix:
+        determinate:
+          - determinate: true
+          - determinate: false
         systems:
           - system: X64-Linux
             runner: ubuntu-22.04
@@ -69,6 +74,8 @@ jobs:
 
       - name: Install Nix on ${{ matrix.systems.system }}
         uses: DeterminateSystems/nix-installer-action@main
+        with:
+          determinate: ${{ matrix.determinate.determinate }}
 
       - name: Test magic-nix-cache-action@main on ${{ matrix.systems.runner }}
         uses: DeterminateSystems/magic-nix-cache-action@main
