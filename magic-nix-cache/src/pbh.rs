@@ -60,7 +60,7 @@ pub async fn subscribe_uds_post_build_hook(
             let response = match response {
                 Ok(r) => r,
                 Err(e) => {
-                    tracing::error!("buit-paths: failed to send subscription request: {:?}", e);
+                    tracing::error!("built-paths: failed to send subscription request: {:?}", e);
                     continue;
                 }
             };
@@ -87,6 +87,8 @@ pub async fn subscribe_uds_post_build_hook(
                     );
                     continue;
                 };
+
+                tracing::trace!(?event, "Built path event received");
 
                 let maybe_store_paths = event
                     .outputs
