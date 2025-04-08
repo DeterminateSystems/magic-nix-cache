@@ -60,6 +60,6 @@ hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1"] }
 xdg = { version = "2.5.2" }
 
 [dependencies.tokio]
-version = "1.28.0"
+version = "1.44.2"
 default-features = false
 features = ["fs", "macros", "process", "rt", "rt-multi-thread", "sync"]
