@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Nix on ${{ matrix.systems.system }}
-        uses: DeterminateSystems/nix-installer-action@main
+        uses: DeterminateSystems/determinate-nix-action@v3
       - name: Set up FlakeHub Cache
         uses: DeterminateSystems/flakehub-cache-action@main
 
