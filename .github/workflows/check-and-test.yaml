@@ -21,7 +21,7 @@ jobs:
           fail-mode: true
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
+        uses: DeterminateSystems/determinate-nix-action@v3
 
       - uses: DeterminateSystems/flakehub-cache-action@main
 
@@ -68,10 +68,10 @@ jobs:
           path: ${{ env.ARTIFACT_KEY }}
 
       - name: Install Nix on ${{ matrix.systems.system }}
-        uses: DeterminateSystems/nix-installer-action@main
+        uses: DeterminateSystems/determinate-nix-action@v3
 
       - name: Test magic-nix-cache-action@main on ${{ matrix.systems.runner }}
-        uses: DeterminateSystems/magic-nix-cache-action@main
+        uses: DeterminateSystems/flakehub-cache-action@main
         with:
           source-binary: "${{ env.ARTIFACT_KEY }}/${{ env.ARCHIVE_NAME }}"
           _internal-strict-mode: true

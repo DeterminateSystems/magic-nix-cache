@@ -1,6 +1,6 @@
 //! Action API.
 //!
-//! This API is intended to be used by nix-installer-action.
+//! This API is intended to be used by determinate-nix-action.
 
 use attic::nix_store::StorePath;
 use axum::{extract::Extension, routing::post, Json, Router};
