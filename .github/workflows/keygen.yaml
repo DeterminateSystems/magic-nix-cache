@@ -28,7 +28,7 @@ jobs:
               "ACTIONS_CACHE_SERVICE_V2": "${ACTIONS_CACHE_SERVICE_V2}"
             }
           EOF
-          encrypted=$(cat creds.json | nix develop .#keygen --command -- age -r "$AGE_PUBLIC_KEY" | base64 -w0)
+          encrypted=$(cat creds.json | nix shell nixpkgs#age --command age -r "$AGE_PUBLIC_KEY" | base64 -w0)
 
           echo 'Use the following command to decrypt:'
           echo "echo '$encrypted' | base64 -d | age --decrypt -i key.txt >creds.json"
