@@ -105,6 +105,7 @@
 
             inputs.nix.packages.${stdenv.system}.default # for linking attic
             boost # for linking attic
+            protobuf # for protoc/prost
             bashInteractive
             pkg-config
 

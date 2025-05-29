@@ -23,7 +23,9 @@ jobs:
             {
               "ACTIONS_CACHE_URL": "${ACTIONS_CACHE_URL}",
               "ACTIONS_RUNTIME_URL": "${ACTIONS_RUNTIME_URL}",
-              "ACTIONS_RUNTIME_TOKEN": "${ACTIONS_RUNTIME_TOKEN}"
+              "ACTIONS_RUNTIME_TOKEN": "${ACTIONS_RUNTIME_TOKEN}",
+              "ACTIONS_RESULTS_URL": "${ACTIONS_RESULTS_URL}",
+              "ACTIONS_CACHE_SERVICE_V2": "${ACTIONS_CACHE_SERVICE_V2}"
             }
           EOF
           encrypted=$(cat creds.json | nix develop .#keygen --command -- age -r "$AGE_PUBLIC_KEY" | base64 -w0)
