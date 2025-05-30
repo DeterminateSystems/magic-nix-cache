@@ -379,7 +379,7 @@ impl Api {
     /// Uploads a file. Returns the size of the file.
     pub async fn upload_file<S>(&self, allocation: FileAllocation, mut stream: S) -> Result<usize>
     where
-        S: AsyncRead + Unpin + Send + 'static,
+        S: AsyncRead + Unpin + Send,
     {
         let mut offset = 0;
 

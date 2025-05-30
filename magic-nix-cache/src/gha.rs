@@ -197,10 +197,9 @@ async fn upload_path(
 
     let narinfo_allocation = api.allocate_file_with_random_suffix(&narinfo_path).await?;
 
-    // TODO: resolve memory leak.
-    let narinfo = Box::new(path_info_to_nar_info(store.clone(), &path_info, format!("nar/{}", nar_path))
+    let narinfo = path_info_to_nar_info(store.clone(), &path_info, format!("nar/{}", nar_path))
         .to_string()
-        .expect("failed to convert path into to nar info")).leak();
+        .expect("failed to convert path into to nar info");
 
     tracing::debug!("Uploading '{}'", narinfo_path);
 
