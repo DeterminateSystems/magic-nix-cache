@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package github.actions.results.entities.v1;
+
+import "results/entities/v1/cachescope.proto";
+
+message CacheMetadata {
+  // Backend repository id
+  int64 repository_id = 1;
+
+  // Scopes for the cache entry
+  repeated CacheScope scope = 2;
+}

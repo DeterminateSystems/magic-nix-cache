@@ -565,7 +565,7 @@ impl Api {
 
                 let request = FinalizeCacheEntryUploadRequest {
                     metadata: None,
-                    key: key,
+                    key,
                     size_bytes: offset as i64,
                     version: self.version.clone(),
                 };
@@ -694,7 +694,7 @@ impl Api {
             self.circuit_breaker_429_tripped
                 .check_result(&res, &self.circuit_breaker_429_tripped_callback);
 
-            return Ok(FileAllocation::V1(res?.cache_id));
+            Ok(FileAllocation::V1(res?.cache_id))
         } else {
             let req = CreateCacheEntryRequest {
                 metadata: None,
@@ -709,10 +709,10 @@ impl Api {
                 .await
                 .map_err(Error::init_error)?;
 
-            return Ok(FileAllocation::V2(SignedUrl {
+            Ok(FileAllocation::V2(SignedUrl {
                 signed_url: res.signed_upload_url,
                 key: key.to_string(),
-            }));
+            }))
         }
     }
 
