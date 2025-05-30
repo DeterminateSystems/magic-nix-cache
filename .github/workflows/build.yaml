@@ -21,13 +21,13 @@ jobs:
             runner: ubuntu-22.04
           - nix-system: aarch64-linux
             system: ARM64-Linux
-            runner: ubuntu-22.04-arm
+            runner: namespace-profile-default-arm64
           - nix-system: x86_64-darwin
             system: X64-macOS
-            runner: macos-14
+            runner: macos-14-large
           - nix-system: aarch64-darwin
             system: ARM64-macOS
-            runner: macos-latest
+            runner: macos-latest-xlarge
     steps:
       - uses: actions/checkout@v4
       - name: Install Nix on ${{ matrix.systems.system }}
