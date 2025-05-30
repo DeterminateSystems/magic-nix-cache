@@ -43,6 +43,7 @@
 
             nativeBuildInputs = with final; [
               pkg-config
+              protobuf
             ];
 
             buildInputs = [
