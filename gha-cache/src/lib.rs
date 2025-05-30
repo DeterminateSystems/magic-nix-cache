@@ -15,6 +15,7 @@
 
 pub mod api;
 pub mod credentials;
+mod github;
 mod util;
 
 pub use api::Api;
