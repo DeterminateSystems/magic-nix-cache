@@ -231,6 +231,7 @@ struct CommitCacheRequest {
 struct RequestStats {
     get: AtomicUsize,
     post: AtomicUsize,
+    put: AtomicUsize,
     patch: AtomicUsize,
 }
 
@@ -494,7 +495,12 @@ impl Api {
             FileAllocation::V2(SignedUrl { signed_url, key }) => {
                 let url = Url::parse(&signed_url).map_err(Error::init_error)?;
 
-                self.client
+                let client = Client::builder()
+                    .user_agent(USER_AGENT)
+                    .build()
+                    .map_err(Error::init_error)?;
+
+                client
                     .put(url.clone())
                     .header(CONTENT_TYPE, "application/octet-stream")
                     .header(CONTENT_LENGTH, 0)
@@ -526,9 +532,9 @@ impl Api {
                     let chunk_len = chunk.len();
 
                     #[cfg(debug_assertions)]
-                    self.stats.patch.fetch_add(1, Ordering::SeqCst);
+                    self.stats.put.fetch_add(1, Ordering::SeqCst);
 
-                    self.client
+                    client
                         .put(append_url.clone())
                         .header(CONTENT_TYPE, "application/octet-stream")
                         .header(CONTENT_LENGTH, chunk_len as u64)
@@ -538,14 +544,16 @@ impl Api {
                         .await?
                         .check()
                         .await?;
+
+                    offset += chunk_len;
                 }
 
                 let mut finalize_url = url.clone();
                 finalize_url
                     .query_pairs_mut()
-                    .append_pair("comp", "finalize");
+                    .append_pair("comp", "seal");
 
-                self.client
+                client
                     .put(finalize_url)
                     .header(CONTENT_TYPE, "application/octet-stream")
                     .header(CONTENT_LENGTH, 0)
@@ -635,19 +643,20 @@ impl Api {
                 .twirp_client
                 .get_cache_entry_download_url(GetCacheEntryDownloadUrlRequest {
                     version: self.version.clone(),
-                    key: Default::default(),
+                    key: keys[0].to_string(),
                     restore_keys: keys.iter().map(|k| k.to_string()).collect(),
                     metadata: None,
                 })
                 .await;
 
             match res {
-                Ok(entry) => Ok(Some(entry.signed_download_url)),
-                Err(twirp::ClientError::HttpError { status, .. })
-                    if status == StatusCode::NOT_FOUND =>
-                {
-                    Ok(None)
-                }
+                Ok(entry) => {
+                    if entry.ok {
+                        Ok(Some(entry.signed_download_url))
+                    } else {
+                        Ok(None)
+                    }
+                },
                 Err(e) => Err(Error::init_error(e)), // TODO: wrong error enum
             }
         }
@@ -662,8 +671,6 @@ impl Api {
         if self.circuit_breaker_tripped() {
             return Err(Error::CircuitBreakerTripped);
         }
-
-        tracing::debug!("Reserving cache for {}", key);
 
         if self.credentials.service_v2.is_empty() {
             let req = ReserveCacheRequest {
