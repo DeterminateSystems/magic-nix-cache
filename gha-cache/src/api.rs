@@ -82,6 +82,9 @@ pub enum Error {
         info: ApiErrorInfo,
     },
 
+    #[error("API error: 'not ok' response")]
+    ApiErrorNotOk,
+
     #[error("Twirp error: {0}")]
     TwirpError(#[from] twirp::ClientError),
 
@@ -580,10 +583,7 @@ impl Api {
                         if response.ok {
                             Ok(offset)
                         } else {
-                            Err(Error::ApiError {
-                                status: StatusCode::BAD_REQUEST,
-                                info: ApiErrorInfo::Unstructured(Bytes::new()),
-                            })
+                            Err(Error::ApiErrorNotOk)
                         }
                     }
                     Err(e) => Err(e.into()),
