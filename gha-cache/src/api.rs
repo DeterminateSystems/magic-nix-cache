@@ -82,6 +82,9 @@ pub enum Error {
         info: ApiErrorInfo,
     },
 
+    #[error("Twirp error: {0}")]
+    TwirpError(#[from] twirp::ClientError),
+
     #[error("I/O error: {0}, context: {1}")]
     IoError(std::io::Error, String),
 
@@ -583,8 +586,7 @@ impl Api {
                             })
                         }
                     }
-                    // TODO: wrong error enum
-                    Err(e) => Err(Error::init_error(e)),
+                    Err(e) => Err(e.into()),
                 }
             }
         }
@@ -657,7 +659,7 @@ impl Api {
                         Ok(None)
                     }
                 },
-                Err(e) => Err(Error::init_error(e)), // TODO: wrong error enum
+                Err(e) => Err(e.into()),
             }
         }
     }
@@ -702,12 +704,10 @@ impl Api {
                 version: self.version.clone(),
             };
 
-            // TODO: wrong error enum
             let res = self
                 .twirp_client
                 .create_cache_entry(req)
-                .await
-                .map_err(Error::init_error)?;
+                .await?;
 
             Ok(FileAllocation::V2(SignedUrl {
                 signed_url: res.signed_upload_url,
