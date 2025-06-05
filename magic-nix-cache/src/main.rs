@@ -572,7 +572,7 @@ fn init_logging() -> Result<LogGuard> {
             .add_directive(
                 "gha_cache=debug"
                     .parse()
-                    .expect("failed to parse gha_cahce directive"),
+                    .expect("failed to parse gha_cache directive"),
             );
 
         #[cfg(not(debug_assertions))]
