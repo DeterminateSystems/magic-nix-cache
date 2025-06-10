@@ -6,7 +6,7 @@
 
     crane.url = "https://flakehub.com/f/ipetkov/crane/*";
 
-    nix.url = "https://flakehub.com/f/NixOS/nix/2";
+    nix.url = "https://flakehub.com/f/NixOS/nix/=2.27.*";
   };
 
   outputs = inputs:
