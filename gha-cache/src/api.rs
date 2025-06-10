@@ -555,9 +555,7 @@ impl Api {
                 }
 
                 let mut finalize_url = url.clone();
-                finalize_url
-                    .query_pairs_mut()
-                    .append_pair("comp", "seal");
+                finalize_url.query_pairs_mut().append_pair("comp", "seal");
 
                 client
                     .put(finalize_url)
@@ -658,7 +656,7 @@ impl Api {
                     } else {
                         Ok(None)
                     }
-                },
+                }
                 Err(e) => Err(e.into()),
             }
         }
@@ -704,10 +702,7 @@ impl Api {
                 version: self.version.clone(),
             };
 
-            let res = self
-                .twirp_client
-                .create_cache_entry(req)
-                .await?;
+            let res = self.twirp_client.create_cache_entry(req).await?;
 
             Ok(FileAllocation::V2(SignedUrl {
                 signed_url: res.signed_upload_url,
