@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package github.actions.results.api.v1;
+
+import "results/entities/v1/cachemetadata.proto";
+
+// CacheService provides RPC methods for managing cache entries
+service CacheService {
+  // CreateCacheEntry creates a new cache entry and returns a signed URL for uploading
+  rpc CreateCacheEntry(CreateCacheEntryRequest) returns (CreateCacheEntryResponse);
+  
+  // FinalizeCacheEntryUpload finalizes a cache entry upload and returns the entry ID
+  rpc FinalizeCacheEntryUpload(FinalizeCacheEntryUploadRequest) returns (FinalizeCacheEntryUploadResponse);
+  
+  // GetCacheEntryDownloadURL returns a signed URL for downloading a cache entry
+  rpc GetCacheEntryDownloadURL(GetCacheEntryDownloadURLRequest) returns (GetCacheEntryDownloadURLResponse);
+}
+
+message CreateCacheEntryRequest {
+  // Scope and other metadata for the cache entry
+  github.actions.results.entities.v1.CacheMetadata metadata = 1;
+
+  // An explicit key for a cache entry
+  string key = 2;
+
+  // Hash of the compression tool, runner OS and paths cached
+  string version = 3;
+}
+
+message CreateCacheEntryResponse {
+  bool ok = 1;
+
+  // SAS URL to upload the cache archive
+  string signed_upload_url = 2;
+}
+
+message FinalizeCacheEntryUploadRequest {
+  // Scope and other metadata for the cache entry
+  github.actions.results.entities.v1.CacheMetadata metadata = 1;
+
+  // An explicit key for a cache entry
+  string key = 2;
+
+  // Size of the cache archive in Bytes
+  int64 size_bytes = 3;
+
+  // Hash of the compression tool, runner OS and paths cached
+  string version = 4;
+}
+
+message FinalizeCacheEntryUploadResponse {
+  bool ok = 1;
+
+  // Cache entry database ID
+  int64 entry_id = 2;
+}
+
+message GetCacheEntryDownloadURLRequest {
+  // Scope and other metadata for the cache entry
+  github.actions.results.entities.v1.CacheMetadata metadata = 1;
+
+  // An explicit key for a cache entry
+  string key = 2;
+
+  // Restore keys used for prefix searching
+  repeated string restore_keys = 3;
+
+  // Hash of the compression tool, runner OS and paths cached
+  string version = 4;
+}
+
+message GetCacheEntryDownloadURLResponse {
+  bool ok = 1;
+
+  // SAS URL to download the cache archive
+  string signed_download_url = 2;
+
+  // Key or restore key that matches the lookup
+  string matched_key = 3;
+}
