@@ -826,8 +826,6 @@ impl AtomicCircuitBreaker for AtomicBool {
     }
 
     fn check_err(&self, e: &Error, callback: &CircuitBreakerTrippedCallback) {
-        dbg!(e);
-
         match e {
             Error::ApiError {
                 status: reqwest::StatusCode::TOO_MANY_REQUESTS,
@@ -836,11 +834,17 @@ impl AtomicCircuitBreaker for AtomicBool {
             | Error::TwirpError(ClientError::TwirpError(TwirpErrorResponse {
                 code: TwirpErrorCode::ResourceExhausted,
                 ..
-            })) => {
+            }))
+            | Error::TwirpError(ClientError::HttpError {
+                // The cache backend seems to give out this error for overload:
+                // Twirp error: http error, status code: 502 Bad Gateway, msg:unknown error
+                status: StatusCode::BAD_GATEWAY,
+                ..
+            }) => {
                 // meat is below
             }
             otherwise => {
-                tracing::debug!(%otherwise, "Checked error for resource exhaustion, but it appears to be a different cause");
+                tracing::error!(%otherwise, "Checked error for resource exhaustion, but it appears to be a different cause");
                 return;
             }
         }
