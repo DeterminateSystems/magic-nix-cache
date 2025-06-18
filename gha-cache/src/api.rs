@@ -27,6 +27,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::{io::AsyncRead, sync::Semaphore};
 use twirp::client::Client as TwirpClient;
+use twirp::{ClientError, TwirpErrorCode, TwirpErrorResponse};
 use unicode_bom::Bom;
 use url::Url;
 
@@ -825,14 +826,27 @@ impl AtomicCircuitBreaker for AtomicBool {
     }
 
     fn check_err(&self, e: &Error, callback: &CircuitBreakerTrippedCallback) {
-        if let Error::ApiError {
-            status: reqwest::StatusCode::TOO_MANY_REQUESTS,
-            ..
-        } = e
-        {
-            tracing::info!("Disabling GitHub Actions Cache due to 429: Too Many Requests");
-            self.store(true, Ordering::Relaxed);
-            callback();
+        dbg!(e);
+
+        match e {
+            Error::ApiError {
+                status: reqwest::StatusCode::TOO_MANY_REQUESTS,
+                ..
+            }
+            | Error::TwirpError(ClientError::TwirpError(TwirpErrorResponse {
+                code: TwirpErrorCode::ResourceExhausted,
+                ..
+            })) => {
+                // meat is below
+            }
+            otherwise => {
+                tracing::debug!(%otherwise, "Checked error for resource exhaustion, but it appears to be a different cause");
+                return;
+            }
         }
+
+        tracing::info!(%e, "Disabling GitHub Actions Cache due to rate limiting");
+        self.store(true, Ordering::Relaxed);
+        callback();
     }
 }
