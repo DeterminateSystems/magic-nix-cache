@@ -71,7 +71,7 @@ jobs:
         uses: DeterminateSystems/determinate-nix-action@v3
 
       - name: Test magic-nix-cache-action@main on ${{ matrix.systems.runner }}
-        uses: DeterminateSystems/flakehub-cache-action@main
+        uses: DeterminateSystems/magic-nix-cache-action@main
         with:
           source-binary: "${{ env.ARTIFACT_KEY }}/${{ env.ARCHIVE_NAME }}"
           _internal-strict-mode: true
