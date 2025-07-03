@@ -49,7 +49,7 @@ attic-server = { git = "https://github.com/DeterminateSystems/attic", branch = "
 indicatif = "0.17"
 anyhow = "1.0.71"
 tempfile = "3.9"
-uuid = { version = "1.4.0", features = ["serde", "v7", "rand", "std"] }
+uuid = { version = "1.4.0", features = ["serde", "v7", "std"] }
 futures = "0.3"
 async-compression = "0.4"
 tracing-appender = "0.2.3"
@@ -59,6 +59,7 @@ hyper = { version = "1.0.0", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1"] }
 xdg = { version = "2.5.2" }
 color-eyre = { version = "0.6.3" }
+detsys-ids-client = "0.5.0"
 
 [dependencies.tokio]
 version = "1.44.2"
