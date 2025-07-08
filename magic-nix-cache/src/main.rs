@@ -569,24 +569,23 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = Args::parse();
+    match std::env::var("OUT_PATHS") {
+        Ok(out_paths) => pbh::handle_legacy_post_build_hook(&out_paths).await,
+        Err(_) => {
+            let args = Args::parse();
 
-    let (recorder, client_worker) = detsys_ids_client::builder!()
-        .endpoint(args.diagnostic_endpoint.clone())
-        .build_or_default()
-        .await;
+            let (recorder, client_worker) = detsys_ids_client::builder!()
+                .endpoint(args.diagnostic_endpoint.clone())
+                .build_or_default()
+                .await;
 
-    let (ret, _) = tokio::join!(
-        async move {
-            match std::env::var("OUT_PATHS") {
-                Ok(out_paths) => pbh::handle_legacy_post_build_hook(&out_paths).await,
-                Err(_) => main_cli(args, recorder).await,
-            }
-        },
-        client_worker.wait()
-    );
+            let ret = main_cli(args, recorder).await;
 
-    ret
+            client_worker.wait().await;
+
+            ret
+        }
+    }
 }
 
 pub(crate) fn debug_logfile() -> PathBuf {
