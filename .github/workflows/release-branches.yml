@@ -37,31 +37,33 @@ jobs:
           name: magic-nix-cache-ARM64-macOS
           path: cache-binary-ARM64-macOS
       - name: Persist the cache binary
-        run: cp ./cache-binary-ARM64-macOS/magic-nix-cache.closure.xz ./artifacts/magic-nix-cache-ARM64-macOS
+        run: cp ./cache-binary-ARM64-macOS/magic-nix-cache.closure.xz ./artifacts/ARM64-macOS
 
       - uses: actions/download-artifact@v4.1.8
         with:
           name: magic-nix-cache-X64-macOS
           path: cache-binary-X64-macOS
       - name: Persist the cache binary
-        run: cp ./cache-binary-X64-macOS/magic-nix-cache.closure.xz ./artifacts/magic-nix-cache-X64-macOS
+        run: cp ./cache-binary-X64-macOS/magic-nix-cache.closure.xz ./artifacts/X64-macOS
 
       - uses: actions/download-artifact@v4.1.8
         with:
           name: magic-nix-cache-X64-Linux
           path: cache-binary-X64-Linux
       - name: Persist the cache binary
-        run: cp ./cache-binary-X64-Linux/magic-nix-cache.closure.xz ./artifacts/magic-nix-cache-X64-Linux
+        run: cp ./cache-binary-X64-Linux/magic-nix-cache.closure.xz ./artifacts/X64-Linux
 
       - uses: actions/download-artifact@v4.1.8
         with:
           name: magic-nix-cache-ARM64-Linux
           path: cache-binary-ARM64-Linux
       - name: Persist the cache binary
-        run: cp ./cache-binary-ARM64-Linux/magic-nix-cache.closure.xz ./artifacts/magic-nix-cache-ARM64-Linux
+        run: cp ./cache-binary-ARM64-Linux/magic-nix-cache.closure.xz ./artifacts/ARM64-Linux
 
-      - name: Publish Release (Branch)
-        env:
-          AWS_BUCKET: ${{ secrets.AWS_S3_UPLOAD_BUCKET }}
-        run: |
-          .github/workflows/upload_s3.sh branch "${{ github.ref_name }}" "$GITHUB_SHA"
+      - uses: DeterminateSystems/push-artifact-ids@main
+        with:
+          s3_upload_role: ${{ secrets.AWS_S3_UPLOAD_ROLE }}
+          bucket: ${{ secrets.AWS_S3_UPLOAD_BUCKET }}
+          directory: ./artifacts
+          ids_project_name: magic-nix-cache
+          ids_binary_prefix: magic-nix-cache

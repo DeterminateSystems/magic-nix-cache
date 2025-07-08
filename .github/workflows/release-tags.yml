@@ -29,39 +29,44 @@ jobs:
           name: magic-nix-cache-ARM64-macOS
           path: cache-binary-ARM64-macOS
       - name: Persist the cache binary
-        run: cp ./cache-binary-ARM64-macOS/magic-nix-cache.closure.xz ./artifacts/magic-nix-cache-ARM64-macOS
+        run: cp ./cache-binary-ARM64-macOS/magic-nix-cache.closure.xz ./artifacts/ARM64-macOS
 
       - uses: actions/download-artifact@v4.1.8
         with:
           name: magic-nix-cache-X64-macOS
           path: cache-binary-X64-macOS
       - name: Persist the cache binary
-        run: cp ./cache-binary-X64-macOS/magic-nix-cache.closure.xz ./artifacts/magic-nix-cache-X64-macOS
+        run: cp ./cache-binary-X64-macOS/magic-nix-cache.closure.xz ./artifacts/X64-macOS
 
       - uses: actions/download-artifact@v4.1.8
         with:
           name: magic-nix-cache-X64-Linux
           path: cache-binary-X64-Linux
       - name: Persist the cache binary
-        run: cp ./cache-binary-X64-Linux/magic-nix-cache.closure.xz ./artifacts/magic-nix-cache-X64-Linux
+        run: cp ./cache-binary-X64-Linux/magic-nix-cache.closure.xz ./artifacts/X64-Linux
 
       - uses: actions/download-artifact@v4.1.8
         with:
           name: magic-nix-cache-ARM64-Linux
           path: cache-binary-ARM64-Linux
       - name: Persist the cache binary
-        run: cp ./cache-binary-ARM64-Linux/magic-nix-cache.closure.xz ./artifacts/magic-nix-cache-ARM64-Linux
+        run: cp ./cache-binary-ARM64-Linux/magic-nix-cache.closure.xz ./artifacts/ARM64-Linux
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - uses: DeterminateSystems/push-artifact-ids@main
         with:
-          role-to-assume: ${{ secrets.AWS_S3_UPLOAD_ROLE }}
-          aws-region: us-east-2
-      - name: Publish Release to S3 (Tag)
-        env:
-          AWS_BUCKET: ${{ secrets.AWS_S3_UPLOAD_BUCKET }}
+          s3_upload_role: ${{ secrets.AWS_S3_UPLOAD_ROLE }}
+          bucket: ${{ secrets.AWS_S3_UPLOAD_BUCKET }}
+          directory: ./artifacts
+          ids_project_name: magic-nix-cache
+          ids_binary_prefix: magic-nix-cache
+
+      - name: Rename binaries for GH release
         run: |
-          .github/workflows/upload_s3.sh "tag" "$GITHUB_REF_NAME" "$GITHUB_SHA"
+          mv ./artifacts/{,magic-nix-cache-closure-}ARM64-macOS
+          mv ./artifacts/{,magic-nix-cache-closure-}X64-macOS
+          mv ./artifacts/{,magic-nix-cache-closure-}X64-Linux
+          mv ./artifacts/{,magic-nix-cache-closure-}ARM64-Linux
+
       - name: Publish Release to GitHub (Tag)
         uses: softprops/action-gh-release@v1
         with:
