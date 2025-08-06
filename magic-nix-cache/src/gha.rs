@@ -37,7 +37,15 @@ impl GhaCache {
         metrics: Arc<telemetry::TelemetryReport>,
         narinfo_negative_cache: Arc<RwLock<HashSet<String>>>,
     ) -> Result<GhaCache> {
-        let mut api = Api::new(credentials)?;
+        let cb_metrics = metrics.clone();
+        let mut api = Api::new(
+            credentials,
+            Arc::new(Box::new(move || {
+                cb_metrics
+                    .tripped_429
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+            })),
+        )?;
 
         if let Some(cache_version) = &cache_version {
             api.mutate_version(cache_version.as_bytes());

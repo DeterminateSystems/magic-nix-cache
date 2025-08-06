@@ -18,6 +18,7 @@ mod env;
 mod error;
 mod flakehub;
 mod gha;
+mod github;
 mod pbh;
 mod telemetry;
 mod util;
@@ -45,6 +46,7 @@ use gha_cache::Credentials;
 
 const DETERMINATE_STATE_DIR: &str = "/nix/var/determinate";
 const DETERMINATE_NIXD_SOCKET_NAME: &str = "determinate-nixd.socket";
+const DETERMINATE_NETRC_PATH: &str = "/nix/var/determinate/netrc";
 
 // TODO(colemickens): refactor, move with other UDS stuff (or all PBH stuff) to new file
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -83,11 +85,8 @@ struct Args {
     ///
     /// Set it to an empty string to disable reporting.
     /// See the README for details.
-    #[arg(
-        long,
-        default_value = "https://install.determinate.systems/magic-nix-cache/perf"
-    )]
-    diagnostic_endpoint: String,
+    #[arg(long)]
+    diagnostic_endpoint: Option<String>,
 
     /// The FlakeHub API server.
     #[arg(long, default_value = "https://api.flakehub.com")]
@@ -146,7 +145,7 @@ impl From<Option<Option<CacheTrinary>>> for CacheTrinary {
     }
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum Dnixd {
     Available,
     Missing,
@@ -247,16 +246,18 @@ impl FlakeHubAuthSource {
     }
 }
 
-async fn main_cli() -> Result<()> {
+async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<()> {
     let guard = init_logging()?;
     let _tracing_guard = guard.appender_guard;
 
-    let args = Args::parse();
     let environment = env::Environment::determine();
+    recorder
+        .set_fact("environment", environment.to_string().into())
+        .await;
     tracing::debug!("Running in {}", environment.to_string());
     args.validate(environment)?;
 
-    let metrics = Arc::new(telemetry::TelemetryReport::new());
+    let metrics = Arc::new(telemetry::TelemetryReport::new(recorder.clone()));
 
     let dnixd_uds_socket_dir: &Path = Path::new(&DETERMINATE_STATE_DIR);
     let dnixd_uds_socket_path = dnixd_uds_socket_dir.join(DETERMINATE_NIXD_SOCKET_NAME);
@@ -269,6 +270,9 @@ async fn main_cli() -> Result<()> {
     // but we don't write to it for initializing flakehub_cache unless dnixd is unavailable
     if let Some(parent) = Path::new(&nix_conf_path).parent() {
         create_dir_all(parent).with_context(|| "Creating parent directories of nix.conf")?;
+        recorder
+            .set_fact("nix_conf_path", nix_conf_path.to_string_lossy().into())
+            .await;
     }
     let mut nix_conf = std::fs::OpenOptions::new()
         .create(true)
@@ -285,6 +289,19 @@ async fn main_cli() -> Result<()> {
 
     let narinfo_negative_cache = Arc::new(RwLock::new(HashSet::new()));
 
+    recorder
+        .set_fact(
+            "flakehub_cache_option",
+            format!("{:?}", args.flakehub_preference()).into(),
+        )
+        .await;
+    recorder
+        .set_fact(
+            "dnixd_availability",
+            format!("{:?}", dnixd_available).into(),
+        )
+        .await;
+
     let flakehub_auth_method: Option<FlakeHubAuthSource> = match (
         args.flakehub_preference(),
         &args.flakehub_api_server_netrc,
@@ -292,6 +309,7 @@ async fn main_cli() -> Result<()> {
     ) {
         // User has explicitly pyassed --use-flakehub=disabled, so just straight up don't
         (CacheTrinary::Disabled, _, _) => {
+            recorder.set_fact("flakehub_cache", "disabled".into()).await;
             tracing::info!("Disabling FlakeHub cache.");
             None
         }
@@ -302,10 +320,12 @@ async fn main_cli() -> Result<()> {
         // Use it when determinate-nixd is available, and let the user know what's going on
         (pref, user_netrc_path, Dnixd::Available) => {
             if pref == CacheTrinary::NoPreference {
+                recorder.set_fact("flakehub_cache", "enabled".into()).await;
                 tracing::info!("Enabling FlakeHub cache because determinate-nixd is available.");
             }
 
             if user_netrc_path.is_some() {
+                recorder.set_fact("user_netrc_path", "ignored".into()).await;
                 tracing::info!("Ignoring the user-specified --flakehub-api-server-netrc, in favor of the determinate-nixd netrc");
             }
 
@@ -315,6 +335,9 @@ async fn main_cli() -> Result<()> {
         // When determinate-nixd is not available, but the user specified a netrc
         (_, Some(path), Dnixd::Missing) => {
             if path.exists() {
+                recorder
+                    .set_fact("user_netrc_path", path.to_string_lossy().into())
+                    .await;
                 Some(FlakeHubAuthSource::Netrc(path.to_owned()))
             } else {
                 tracing::debug!(path = %path.display(), "User-provided netrc does not exist");
@@ -329,6 +352,13 @@ async fn main_cli() -> Result<()> {
             ));
         }
     };
+
+    recorder
+        .set_fact(
+            "flakehub_auth_method",
+            format!("{:?}", flakehub_auth_method).into(),
+        )
+        .await;
 
     let flakehub_state = if let Some(auth_method) = flakehub_auth_method {
         let flakehub_cache_server = &args.flakehub_cache_server;
@@ -365,7 +395,11 @@ async fn main_cli() -> Result<()> {
                 Some(state)
             }
             Err(err) => {
-                tracing::error!("FlakeHub cache initialization failed: {}", err);
+                tracing::error!(
+                    "FlakeHub: cache initialized failed: Unauthenticated: {}",
+                    err
+                );
+                github::print_unauthenticated_error();
                 None
             }
         }
@@ -374,6 +408,12 @@ async fn main_cli() -> Result<()> {
         None
     };
 
+    recorder
+        .set_fact(
+            "github_action_cache_option",
+            format!("{:?}", args.github_cache_preference()).into(),
+        )
+        .await;
     let gha_cache = if (args.github_cache_preference() == CacheTrinary::Enabled)
         || (args.github_cache_preference() == CacheTrinary::NoPreference
             && flakehub_state.is_none())
@@ -404,14 +444,6 @@ async fn main_cli() -> Result<()> {
         }
 
         None
-    };
-
-    let diagnostic_endpoint = match args.diagnostic_endpoint.as_str() {
-        "" => {
-            tracing::info!("Diagnostics disabled.");
-            None
-        }
-        url => Some(url),
     };
 
     let (shutdown_sender, shutdown_receiver) = oneshot::channel();
@@ -528,9 +560,7 @@ async fn main_cli() -> Result<()> {
         .await;
 
     // Notify diagnostics endpoint
-    if let Some(diagnostic_endpoint) = diagnostic_endpoint {
-        state.metrics.send(diagnostic_endpoint).await;
-    }
+    state.metrics.send().await;
 
     ret?;
 
@@ -541,7 +571,20 @@ async fn main_cli() -> Result<()> {
 async fn main() -> Result<()> {
     match std::env::var("OUT_PATHS") {
         Ok(out_paths) => pbh::handle_legacy_post_build_hook(&out_paths).await,
-        Err(_) => main_cli().await,
+        Err(_) => {
+            let args = Args::parse();
+
+            let (recorder, client_worker) = detsys_ids_client::builder!()
+                .endpoint(args.diagnostic_endpoint.clone())
+                .build_or_default()
+                .await;
+
+            let ret = main_cli(args, recorder).await;
+
+            client_worker.wait().await;
+
+            ret
+        }
     }
 }
 
@@ -566,7 +609,7 @@ fn init_logging() -> Result<LogGuard> {
             .add_directive(
                 "gha_cache=debug"
                     .parse()
-                    .expect("failed to parse gha_cahce directive"),
+                    .expect("failed to parse gha_cache directive"),
             );
 
         #[cfg(not(debug_assertions))]

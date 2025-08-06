@@ -1,6 +1,7 @@
 .direnv
 
 result*
+!results
 /target
 
 key.txt

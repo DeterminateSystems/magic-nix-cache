@@ -13,7 +13,7 @@ jobs:
       contents: "read"
     steps:
       - uses: "actions/checkout@v4"
-      - uses: "DeterminateSystems/nix-installer-action@main"
+      - uses: "DeterminateSystems/determinate-nix-action@v3"
       - uses: "DeterminateSystems/flakehub-push@main"
         with:
           name: "DeterminateSystems/magic-nix-cache"

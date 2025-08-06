@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package github.actions.results.entities.v1;
+
+message CacheScope {
+  // Determines the scope of the cache entry
+  string scope = 1;
+
+  // None: 0 | Read: 1 | Write: 2 | All: (1|2)
+  int64 permission = 2;
+}

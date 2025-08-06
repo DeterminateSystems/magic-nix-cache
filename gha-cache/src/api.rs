@@ -8,22 +8,27 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use crate::credentials::Credentials;
+use crate::github::actions::results::api::v1::{
+    CacheServiceClient, CreateCacheEntryRequest, FinalizeCacheEntryUploadRequest,
+    GetCacheEntryDownloadUrlRequest,
+};
+use crate::util::read_chunk_async;
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use futures::future;
 use rand::{distributions::Alphanumeric, Rng};
 use reqwest::{
-    header::{HeaderMap, HeaderValue, CONTENT_RANGE, CONTENT_TYPE},
+    header::{HeaderMap, HeaderValue, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE},
     Client, StatusCode,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::{io::AsyncRead, sync::Semaphore};
+use twirp::client::Client as TwirpClient;
 use unicode_bom::Bom;
-
-use crate::credentials::Credentials;
-use crate::util::read_chunk_async;
+use url::Url;
 
 /// The API version we implement.
 ///
@@ -47,6 +52,8 @@ const CHUNK_SIZE: usize = 32 * 1024 * 1024;
 const MAX_CONCURRENCY: usize = 4;
 
 type Result<T> = std::result::Result<T, Error>;
+
+pub type CircuitBreakerTrippedCallback = Arc<Box<dyn Fn() + Send + Sync>>;
 
 /// An API error.
 #[derive(Error, Debug)]
@@ -75,6 +82,12 @@ pub enum Error {
         info: ApiErrorInfo,
     },
 
+    #[error("API error: 'not ok' response")]
+    ApiErrorNotOk,
+
+    #[error("Twirp error: {0}")]
+    TwirpError(#[from] twirp::ClientError),
+
     #[error("I/O error: {0}, context: {1}")]
     IoError(std::io::Error, String),
 
@@ -82,7 +95,6 @@ pub enum Error {
     TooManyCollisions,
 }
 
-#[derive(Debug)]
 pub struct Api {
     /// Credentials to access the cache.
     credentials: Credentials,
@@ -99,10 +111,15 @@ pub struct Api {
     /// The HTTP client for authenticated requests.
     client: Client,
 
+    /// The TWIRP client for v2 cache service.
+    twirp_client: TwirpClient,
+
     /// The concurrent upload limit.
     concurrency_limit: Arc<Semaphore>,
 
     circuit_breaker_429_tripped: Arc<AtomicBool>,
+
+    circuit_breaker_429_tripped_callback: CircuitBreakerTrippedCallback,
 
     /// Backend request statistics.
     #[cfg(debug_assertions)]
@@ -110,13 +127,23 @@ pub struct Api {
 }
 
 /// A file allocation.
-#[derive(Debug, Clone, Copy)]
-pub struct FileAllocation(CacheId);
+#[derive(Debug, Clone)]
+pub enum FileAllocation {
+    V1(CacheId),
+    V2(SignedUrl),
+}
 
 /// The ID of a cache.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
-struct CacheId(pub i64);
+pub struct CacheId(pub i64);
+
+// A signed URL for a cache file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignedUrl {
+    pub signed_url: String,
+    pub key: String,
+}
 
 /// An API error.
 #[derive(Debug, Clone)]
@@ -210,6 +237,7 @@ struct CommitCacheRequest {
 struct RequestStats {
     get: AtomicUsize,
     post: AtomicUsize,
+    put: AtomicUsize,
     patch: AtomicUsize,
 }
 
@@ -242,7 +270,10 @@ impl fmt::Display for ApiErrorInfo {
 }
 
 impl Api {
-    pub fn new(credentials: Credentials) -> Result<Self> {
+    pub fn new(
+        credentials: Credentials,
+        circuit_breaker_429_tripped_callback: CircuitBreakerTrippedCallback,
+    ) -> Result<Self> {
         let mut headers = HeaderMap::new();
         let auth_header = {
             let mut h = HeaderValue::from_str(&format!("Bearer {}", credentials.runtime_token))
@@ -266,13 +297,33 @@ impl Api {
         let version_hasher = Sha256::new_with_prefix(DEFAULT_VERSION.as_bytes());
         let initial_version = hex::encode(version_hasher.clone().finalize());
 
+        // Create HTTP client with authorization header
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            format!("Bearer {}", credentials.runtime_token)
+                .parse()
+                .map_err(Error::init_error)?,
+        );
+
+        let service_url = credentials.results_url.clone() + "twirp/";
+
+        let twirp_client = TwirpClient::new(
+            reqwest::Url::parse(&service_url).map_err(Error::init_error)?,
+            client.clone(),
+            vec![],
+        )
+        .map_err(Error::init_error)?;
+
         Ok(Self {
             credentials,
             version: initial_version,
             version_hasher,
             client,
+            twirp_client,
             concurrency_limit: Arc::new(Semaphore::new(MAX_CONCURRENCY)),
             circuit_breaker_429_tripped: Arc::new(AtomicBool::from(false)),
+            circuit_breaker_429_tripped_callback,
             #[cfg(debug_assertions)]
             stats: Default::default(),
         })
@@ -292,8 +343,7 @@ impl Api {
 
     /// Allocates a file.
     pub async fn allocate_file(&self, key: &str) -> Result<FileAllocation> {
-        let reservation = self.reserve_cache(key, None).await?;
-        Ok(FileAllocation(reservation.cache_id))
+        self.reserve_cache(key, None).await
     }
 
     /// Allocates a file with a random suffix.
@@ -337,92 +387,207 @@ impl Api {
     where
         S: AsyncRead + Unpin + Send,
     {
+        let mut offset = 0;
+
         if self.circuit_breaker_tripped() {
             return Err(Error::CircuitBreakerTripped);
         }
 
-        let mut offset = 0;
-        let mut futures = Vec::new();
-        loop {
-            let buf = BytesMut::with_capacity(CHUNK_SIZE);
-            let chunk = read_chunk_async(&mut stream, buf)
-                .await
-                .map_err(|e| Error::IoError(e, "Reading a chunk during upload".to_string()))?;
-            if chunk.is_empty() {
-                offset += chunk.len();
-                break;
+        match allocation {
+            FileAllocation::V1(cache_id) => {
+                let mut futures = Vec::new();
+
+                loop {
+                    let buf = BytesMut::with_capacity(CHUNK_SIZE);
+                    let chunk = read_chunk_async(&mut stream, buf).await.map_err(|e| {
+                        Error::IoError(e, "Reading a chunk during upload".to_string())
+                    })?;
+                    if chunk.is_empty() {
+                        offset += chunk.len();
+                        break;
+                    }
+
+                    if offset == chunk.len() {
+                        tracing::trace!("Received first chunk for cache {:?}", cache_id);
+                    }
+
+                    let chunk_len = chunk.len();
+
+                    #[cfg(debug_assertions)]
+                    self.stats.patch.fetch_add(1, Ordering::SeqCst);
+
+                    futures.push({
+                        let client = self.client.clone();
+                        let concurrency_limit = self.concurrency_limit.clone();
+                        let circuit_breaker_429_tripped = self.circuit_breaker_429_tripped.clone();
+                        let circuit_breaker_429_tripped_callback =
+                            self.circuit_breaker_429_tripped_callback.clone();
+                        let url = self.construct_url(&format!("caches/{}", cache_id.0));
+
+                        tokio::task::spawn(async move {
+                            let permit = concurrency_limit
+                                .acquire()
+                                .await
+                                .expect("failed to acquire concurrency semaphore permit");
+
+                            tracing::trace!(
+                                "Starting uploading chunk {}-{}",
+                                offset,
+                                offset + chunk_len - 1
+                            );
+
+                            let r = client
+                                .patch(url)
+                                .header(CONTENT_TYPE, "application/octet-stream")
+                                .header(
+                                    CONTENT_RANGE,
+                                    format!("bytes {}-{}/*", offset, offset + chunk.len() - 1),
+                                )
+                                .body(chunk)
+                                .send()
+                                .await?
+                                .check()
+                                .await;
+
+                            tracing::trace!(
+                                "Finished uploading chunk {}-{}: {:?}",
+                                offset,
+                                offset + chunk_len - 1,
+                                r
+                            );
+
+                            drop(permit);
+
+                            circuit_breaker_429_tripped
+                                .check_result(&r, &circuit_breaker_429_tripped_callback);
+
+                            r
+                        })
+                    });
+
+                    offset += chunk_len;
+                }
+
+                future::join_all(futures)
+                    .await
+                    .into_iter()
+                    .try_for_each(|join_result| {
+                        join_result.expect("failed collecting a join result during parallel upload")
+                    })?;
+
+                tracing::debug!("Received all chunks for cache {:?}", cache_id);
+
+                let req = CommitCacheRequest { size: offset };
+
+                #[cfg(debug_assertions)]
+                self.stats.post.fetch_add(1, Ordering::SeqCst);
+
+                if let Err(e) = self
+                    .client
+                    .post(self.construct_url(&format!("caches/{}", cache_id.0)))
+                    .json(&req)
+                    .send()
+                    .await?
+                    .check()
+                    .await
+                {
+                    self.circuit_breaker_429_tripped
+                        .check_err(&e, &self.circuit_breaker_429_tripped_callback);
+                    return Err(e);
+                }
+
+                Ok(offset)
             }
+            FileAllocation::V2(SignedUrl { signed_url, key }) => {
+                let url = Url::parse(&signed_url).map_err(Error::init_error)?;
 
-            if offset == chunk.len() {
-                tracing::trace!("Received first chunk for cache {:?}", allocation.0);
-            }
+                let client = Client::builder()
+                    .user_agent(USER_AGENT)
+                    .build()
+                    .map_err(Error::init_error)?;
 
-            let chunk_len = chunk.len();
+                client
+                    .put(url.clone())
+                    .header(CONTENT_TYPE, "application/octet-stream")
+                    .header(CONTENT_LENGTH, 0)
+                    .header("x-ms-blob-type", "AppendBlob")
+                    .send()
+                    .await?
+                    .check()
+                    .await?;
 
-            #[cfg(debug_assertions)]
-            self.stats.patch.fetch_add(1, Ordering::SeqCst);
+                let mut append_url = url.clone();
+                append_url
+                    .query_pairs_mut()
+                    .append_pair("comp", "appendblock");
 
-            futures.push({
-                let client = self.client.clone();
-                let concurrency_limit = self.concurrency_limit.clone();
-                let circuit_breaker_429_tripped = self.circuit_breaker_429_tripped.clone();
-                let url = self.construct_url(&format!("caches/{}", allocation.0 .0));
+                loop {
+                    let buf = BytesMut::with_capacity(CHUNK_SIZE);
+                    let chunk = read_chunk_async(&mut stream, buf).await.map_err(|e| {
+                        Error::IoError(e, "Reading a chunk during upload".to_string())
+                    })?;
+                    if chunk.is_empty() {
+                        offset += chunk.len();
+                        break;
+                    }
 
-                tokio::task::spawn(async move {
-                    let permit = concurrency_limit
-                        .acquire()
-                        .await
-                        .expect("failed to acquire concurrency semaphore permit");
+                    if offset == chunk.len() {
+                        tracing::trace!("Received first chunk for cache {:?}", key);
+                    }
 
-                    tracing::trace!(
-                        "Starting uploading chunk {}-{}",
-                        offset,
-                        offset + chunk_len - 1
-                    );
+                    let chunk_len = chunk.len();
 
-                    let r = client
-                        .patch(url)
+                    #[cfg(debug_assertions)]
+                    self.stats.put.fetch_add(1, Ordering::SeqCst);
+
+                    client
+                        .put(append_url.clone())
                         .header(CONTENT_TYPE, "application/octet-stream")
-                        .header(
-                            CONTENT_RANGE,
-                            format!("bytes {}-{}/*", offset, offset + chunk.len() - 1),
-                        )
+                        .header(CONTENT_LENGTH, chunk_len as u64)
+                        .header("x-ms-blob-type", "AppendBlob")
                         .body(chunk)
                         .send()
                         .await?
                         .check()
-                        .await;
+                        .await?;
 
-                    tracing::trace!(
-                        "Finished uploading chunk {}-{}: {:?}",
-                        offset,
-                        offset + chunk_len - 1,
-                        r
-                    );
+                    offset += chunk_len;
+                }
 
-                    drop(permit);
+                let mut finalize_url = url.clone();
+                finalize_url.query_pairs_mut().append_pair("comp", "seal");
 
-                    circuit_breaker_429_tripped.check_result(&r);
+                client
+                    .put(finalize_url)
+                    .header(CONTENT_TYPE, "application/octet-stream")
+                    .header(CONTENT_LENGTH, 0)
+                    .header("x-ms-blob-type", "AppendBlob")
+                    .send()
+                    .await?
+                    .check()
+                    .await?;
 
-                    r
-                })
-            });
+                let request = FinalizeCacheEntryUploadRequest {
+                    metadata: None,
+                    key,
+                    size_bytes: offset as i64,
+                    version: self.version.clone(),
+                };
 
-            offset += chunk_len;
+                let response = self.twirp_client.finalize_cache_entry_upload(request).await;
+
+                match response {
+                    Ok(response) => {
+                        if response.ok {
+                            Ok(offset)
+                        } else {
+                            Err(Error::ApiErrorNotOk)
+                        }
+                    }
+                    Err(e) => Err(e.into()),
+                }
+            }
         }
-
-        future::join_all(futures)
-            .await
-            .into_iter()
-            .try_for_each(|join_result| {
-                join_result.expect("failed collecting a join result during parallel upload")
-            })?;
-
-        tracing::debug!("Received all chunks for cache {:?}", allocation.0);
-
-        self.commit_cache(allocation.0, offset).await?;
-
-        Ok(offset)
     }
 
     /// Downloads a file based on a list of key prefixes.
@@ -431,10 +596,7 @@ impl Api {
             return Err(Error::CircuitBreakerTripped);
         }
 
-        Ok(self
-            .get_cache_entry(keys)
-            .await?
-            .map(|entry| entry.archive_location))
+        self.get_cache_entry(keys).await
     }
 
     /// Dumps statistics.
@@ -448,7 +610,7 @@ impl Api {
     // Private
 
     /// Retrieves a cache based on a list of key prefixes.
-    async fn get_cache_entry(&self, keys: &[&str]) -> Result<Option<ArtifactCacheEntry>> {
+    async fn get_cache_entry(&self, keys: &[&str]) -> Result<Option<String>> {
         if self.circuit_breaker_tripped() {
             return Err(Error::CircuitBreakerTripped);
         }
@@ -456,21 +618,47 @@ impl Api {
         #[cfg(debug_assertions)]
         self.stats.get.fetch_add(1, Ordering::SeqCst);
 
-        let res = self
-            .client
-            .get(self.construct_url("cache"))
-            .query(&[("version", &self.version), ("keys", &keys.join(","))])
-            .send()
-            .await?
-            .check_json()
-            .await;
+        if self.credentials.service_v2.is_empty() {
+            let res = self
+                .client
+                .get(self.construct_url("cache"))
+                .query(&[("version", &self.version), ("keys", &keys.join(","))])
+                .send()
+                .await?
+                .check_json::<ArtifactCacheEntry>()
+                .await;
 
-        self.circuit_breaker_429_tripped.check_result(&res);
+            self.circuit_breaker_429_tripped
+                .check_result(&res, &self.circuit_breaker_429_tripped_callback);
 
-        match res {
-            Ok(entry) => Ok(Some(entry)),
-            Err(Error::DecodeError { status, .. }) if status == StatusCode::NO_CONTENT => Ok(None),
-            Err(e) => Err(e),
+            match res {
+                Ok(entry) => Ok(Some(entry.archive_location)),
+                Err(Error::DecodeError { status, .. }) if status == StatusCode::NO_CONTENT => {
+                    Ok(None)
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            let res = self
+                .twirp_client
+                .get_cache_entry_download_url(GetCacheEntryDownloadUrlRequest {
+                    version: self.version.clone(),
+                    key: keys[0].to_string(),
+                    restore_keys: keys.iter().map(|k| k.to_string()).collect(),
+                    metadata: None,
+                })
+                .await;
+
+            match res {
+                Ok(entry) => {
+                    if entry.ok {
+                        Ok(Some(entry.signed_download_url))
+                    } else {
+                        Ok(None)
+                    }
+                }
+                Err(e) => Err(e.into()),
+            }
         }
     }
 
@@ -479,67 +667,48 @@ impl Api {
     /// The cache key should be unique. A cache cannot be created
     /// again if the same (cache_name, cache_version) pair already
     /// exists.
-    async fn reserve_cache(
-        &self,
-        key: &str,
-        cache_size: Option<usize>,
-    ) -> Result<ReserveCacheResponse> {
+    async fn reserve_cache(&self, key: &str, cache_size: Option<usize>) -> Result<FileAllocation> {
         if self.circuit_breaker_tripped() {
             return Err(Error::CircuitBreakerTripped);
         }
 
-        tracing::debug!("Reserving cache for {}", key);
+        if self.credentials.service_v2.is_empty() {
+            let req = ReserveCacheRequest {
+                key,
+                version: &self.version,
+                cache_size,
+            };
 
-        let req = ReserveCacheRequest {
-            key,
-            version: &self.version,
-            cache_size,
-        };
+            #[cfg(debug_assertions)]
+            self.stats.post.fetch_add(1, Ordering::SeqCst);
 
-        #[cfg(debug_assertions)]
-        self.stats.post.fetch_add(1, Ordering::SeqCst);
+            let res = self
+                .client
+                .post(self.construct_url("caches"))
+                .json(&req)
+                .send()
+                .await?
+                .check_json::<ReserveCacheResponse>()
+                .await;
 
-        let res = self
-            .client
-            .post(self.construct_url("caches"))
-            .json(&req)
-            .send()
-            .await?
-            .check_json()
-            .await;
+            self.circuit_breaker_429_tripped
+                .check_result(&res, &self.circuit_breaker_429_tripped_callback);
 
-        self.circuit_breaker_429_tripped.check_result(&res);
+            Ok(FileAllocation::V1(res?.cache_id))
+        } else {
+            let req = CreateCacheEntryRequest {
+                metadata: None,
+                key: key.to_string(),
+                version: self.version.clone(),
+            };
 
-        res
-    }
+            let res = self.twirp_client.create_cache_entry(req).await?;
 
-    /// Finalizes uploading to a cache.
-    async fn commit_cache(&self, cache_id: CacheId, size: usize) -> Result<()> {
-        if self.circuit_breaker_tripped() {
-            return Err(Error::CircuitBreakerTripped);
+            Ok(FileAllocation::V2(SignedUrl {
+                signed_url: res.signed_upload_url,
+                key: key.to_string(),
+            }))
         }
-
-        tracing::debug!("Commiting cache {:?}", cache_id);
-
-        let req = CommitCacheRequest { size };
-
-        #[cfg(debug_assertions)]
-        self.stats.post.fetch_add(1, Ordering::SeqCst);
-
-        if let Err(e) = self
-            .client
-            .post(self.construct_url(&format!("caches/{}", cache_id.0)))
-            .json(&req)
-            .send()
-            .await?
-            .check()
-            .await
-        {
-            self.circuit_breaker_429_tripped.check_err(&e);
-            return Err(e);
-        }
-
-        Ok(())
     }
 
     fn construct_url(&self, resource: &str) -> String {
@@ -610,25 +779,34 @@ async fn handle_error(res: reqwest::Response) -> Error {
 }
 
 trait AtomicCircuitBreaker {
-    fn check_err(&self, e: &Error);
-    fn check_result<T>(&self, r: &std::result::Result<T, Error>);
+    fn check_err(&self, e: &Error, callback: &CircuitBreakerTrippedCallback);
+    fn check_result<T>(
+        &self,
+        r: &std::result::Result<T, Error>,
+        callback: &CircuitBreakerTrippedCallback,
+    );
 }
 
 impl AtomicCircuitBreaker for AtomicBool {
-    fn check_result<T>(&self, r: &std::result::Result<T, Error>) {
+    fn check_result<T>(
+        &self,
+        r: &std::result::Result<T, Error>,
+        callback: &CircuitBreakerTrippedCallback,
+    ) {
         if let Err(ref e) = r {
-            self.check_err(e)
+            self.check_err(e, callback)
         }
     }
 
-    fn check_err(&self, e: &Error) {
+    fn check_err(&self, e: &Error, callback: &CircuitBreakerTrippedCallback) {
         if let Error::ApiError {
             status: reqwest::StatusCode::TOO_MANY_REQUESTS,
-            info: ref _info,
+            ..
         } = e
         {
             tracing::info!("Disabling GitHub Actions Cache due to 429: Too Many Requests");
             self.store(true, Ordering::Relaxed);
+            callback();
         }
     }
 }
