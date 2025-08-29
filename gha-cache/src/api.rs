@@ -263,7 +263,7 @@ impl fmt::Display for ApiErrorInfo {
                 write!(f, "[Unstructured] {}", String::from_utf8_lossy(bytes))
             }
             Self::Structured(e) => {
-                write!(f, "{:?}", e)
+                write!(f, "{e:?}")
             }
         }
     }
@@ -284,7 +284,7 @@ impl Api {
         headers.insert("Authorization", auth_header);
         headers.insert(
             "Accept",
-            HeaderValue::from_str(&format!("application/json;api-version={}", API_VERSION))
+            HeaderValue::from_str(&format!("application/json;api-version={API_VERSION}"))
                 .map_err(Error::init_error)?,
         );
 
@@ -358,7 +358,7 @@ impl Api {
                 .map(char::from)
                 .collect();
 
-            let full_key = format!("{}-{}", key, nonce);
+            let full_key = format!("{key}-{nonce}");
 
             match self.allocate_file(&full_key).await {
                 Ok(allocation) => {

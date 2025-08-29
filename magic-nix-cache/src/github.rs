@@ -48,5 +48,5 @@ pub(crate) fn print_unauthenticated_error() {
             );
         }
     };
-    println!("{}", msg);
+    println!("{msg}");
 }

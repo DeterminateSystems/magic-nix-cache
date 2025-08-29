@@ -177,7 +177,7 @@ async fn upload_path(
     let nar_stream = store.nar_from_path(path.clone());
 
     let nar_reader = nar_stream
-        .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))
+        .map_err(std::io::Error::other)
         .into_async_read();
 
     let nar_compressor = ZstdEncoder::new(nar_reader.compat());
@@ -197,7 +197,7 @@ async fn upload_path(
 
     let narinfo_allocation = api.allocate_file_with_random_suffix(&narinfo_path).await?;
 
-    let narinfo = path_info_to_nar_info(store.clone(), &path_info, format!("nar/{}", nar_path))
+    let narinfo = path_info_to_nar_info(store.clone(), &path_info, format!("nar/{nar_path}"))
         .to_string()
         .expect("failed to convert path into to nar info");
 

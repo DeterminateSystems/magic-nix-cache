@@ -298,7 +298,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
     recorder
         .set_fact(
             "dnixd_availability",
-            format!("{:?}", dnixd_available).into(),
+            format!("{dnixd_available:?}").into(),
         )
         .await;
 
@@ -356,7 +356,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
     recorder
         .set_fact(
             "flakehub_auth_method",
-            format!("{:?}", flakehub_auth_method).into(),
+            format!("{flakehub_auth_method:?}").into(),
         )
         .await;
 
