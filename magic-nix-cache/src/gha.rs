@@ -176,9 +176,7 @@ async fn upload_path(
 
     let nar_stream = store.nar_from_path(path.clone());
 
-    let nar_reader = nar_stream
-        .map_err(std::io::Error::other)
-        .into_async_read();
+    let nar_reader = nar_stream.map_err(std::io::Error::other).into_async_read();
 
     let nar_compressor = ZstdEncoder::new(nar_reader.compat());
 

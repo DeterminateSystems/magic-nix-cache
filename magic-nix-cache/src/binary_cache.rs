@@ -96,10 +96,8 @@ async fn put_narinfo(
     let allocation = gha_cache.api.allocate_file_with_random_suffix(&key).await?;
 
     let body_stream = body.into_data_stream();
-    let stream = StreamReader::new(
-        body_stream
-            .map(|r| r.map_err(|e| std::io::Error::other(e.to_string()))),
-    );
+    let stream =
+        StreamReader::new(body_stream.map(|r| r.map_err(|e| std::io::Error::other(e.to_string()))));
 
     gha_cache.api.upload_file(allocation, stream).await?;
     state.metrics.narinfos_uploaded.incr();
@@ -147,10 +145,8 @@ async fn put_nar(
         .await?;
 
     let body_stream = body.into_data_stream();
-    let stream = StreamReader::new(
-        body_stream
-            .map(|r| r.map_err(|e| std::io::Error::other(e.to_string()))),
-    );
+    let stream =
+        StreamReader::new(body_stream.map(|r| r.map_err(|e| std::io::Error::other(e.to_string()))));
 
     gha_cache.api.upload_file(allocation, stream).await?;
     state.metrics.nars_uploaded.incr();
