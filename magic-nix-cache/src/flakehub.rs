@@ -71,8 +71,7 @@ pub async fn init_cache(
             netrc_file
                 .write_all(
                     format!(
-                        "\nmachine {} login {} password {}\n\n",
-                        flakehub_cache_server_hostname, flakehub_login, flakehub_password,
+                        "\nmachine {flakehub_cache_server_hostname} login {flakehub_login} password {flakehub_password}\n\n",
                     )
                     .as_bytes(),
                 )
@@ -138,13 +137,13 @@ pub async fn init_cache(
     let cache_name = {
         let mut url = flakehub_api_server
             .join("project")
-            .map_err(|_| Error::Config(format!("bad URL '{}'", flakehub_api_server)))?;
+            .map_err(|_| Error::Config(format!("bad URL '{flakehub_api_server}'")))?;
 
         if let Some(flakehub_flake_name) = flakehub_flake_name {
             if !flakehub_flake_name.is_empty() {
                 url = flakehub_api_server
-                    .join(&format!("project/{}", flakehub_flake_name))
-                    .map_err(|_| Error::Config(format!("bad URL '{}'", flakehub_api_server)))?;
+                    .join(&format!("project/{flakehub_flake_name}"))
+                    .map_err(|_| Error::Config(format!("bad URL '{flakehub_api_server}'")))?;
             }
         }
 
@@ -257,14 +256,12 @@ async fn extract_info_from_netrc(
         .to_string();
     let flakehub_login = flakehub_netrc_entry.login.ok_or_else(|| {
         Error::Config(format!(
-            "netrc file does not contain a login for '{}'",
-            flakehub_api_server
+            "netrc file does not contain a login for '{flakehub_api_server}'"
         ))
     })?;
     let flakehub_password = flakehub_netrc_entry.password.ok_or_else(|| {
         Error::Config(format!(
-            "netrc file does not contain a password for '{}'",
-            flakehub_api_server
+            "netrc file does not contain a password for '{flakehub_api_server}'"
         ))
     })?;
 

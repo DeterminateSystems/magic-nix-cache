@@ -6,7 +6,7 @@ fn main() {
     ];
 
     for entry in &proto_source_files {
-        println!("cargo:rerun-if-changed={}", entry);
+        println!("cargo:rerun-if-changed={entry}");
     }
 
     prost_build::Config::new()

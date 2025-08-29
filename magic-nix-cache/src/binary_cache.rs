@@ -46,7 +46,7 @@ async fn get_narinfo(
     }
 
     let store_path_hash = components[0].to_string();
-    let key = format!("{}.narinfo", store_path_hash);
+    let key = format!("{store_path_hash}.narinfo");
 
     if state
         .narinfo_negative_cache
@@ -92,14 +92,12 @@ async fn put_narinfo(
     let gha_cache = state.gha_cache.as_ref().ok_or(Error::GHADisabled)?;
 
     let store_path_hash = components[0].to_string();
-    let key = format!("{}.narinfo", store_path_hash);
+    let key = format!("{store_path_hash}.narinfo");
     let allocation = gha_cache.api.allocate_file_with_random_suffix(&key).await?;
 
     let body_stream = body.into_data_stream();
-    let stream = StreamReader::new(
-        body_stream
-            .map(|r| r.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))),
-    );
+    let stream =
+        StreamReader::new(body_stream.map(|r| r.map_err(|e| std::io::Error::other(e.to_string()))));
 
     gha_cache.api.upload_file(allocation, stream).await?;
     state.metrics.narinfos_uploaded.incr();
@@ -128,7 +126,7 @@ async fn get_nar(Extension(state): Extension<State>, Path(path): Path<String>) -
 
     if let Some(upstream) = &state.upstream {
         state.metrics.nars_sent_upstream.incr();
-        Ok(Redirect::temporary(&format!("{}/nar/{}", upstream, path)))
+        Ok(Redirect::temporary(&format!("{upstream}/nar/{path}")))
     } else {
         Err(Error::NotFound)
     }
@@ -147,10 +145,8 @@ async fn put_nar(
         .await?;
 
     let body_stream = body.into_data_stream();
-    let stream = StreamReader::new(
-        body_stream
-            .map(|r| r.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))),
-    );
+    let stream =
+        StreamReader::new(body_stream.map(|r| r.map_err(|e| std::io::Error::other(e.to_string()))));
 
     gha_cache.api.upload_file(allocation, stream).await?;
     state.metrics.nars_uploaded.incr();
@@ -160,7 +156,7 @@ async fn put_nar(
 
 fn pull_through(state: &State, path: &str) -> Result<Redirect> {
     if let Some(upstream) = &state.upstream {
-        Ok(Redirect::temporary(&format!("{}/{}", upstream, path)))
+        Ok(Redirect::temporary(&format!("{upstream}/{path}")))
     } else {
         Err(Error::NotFound)
     }

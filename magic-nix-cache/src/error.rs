@@ -67,6 +67,6 @@ impl IntoResponse for Error {
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
-        (code, format!("{}", self)).into_response()
+        (code, format!("{self}")).into_response()
     }
 }

@@ -59,7 +59,7 @@ hyper = { version = "1.0.0", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1"] }
 xdg = { version = "2.5.2" }
 color-eyre = { version = "0.6.3" }
-detsys-ids-client = "0.5.0"
+detsys-ids-client = "0.6"
 
 [dependencies.tokio]
 version = "1.44.2"
