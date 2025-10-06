@@ -1,11 +1,14 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use crate::error::{Error, Result};
 use crate::telemetry;
 use async_compression::tokio::bufread::ZstdEncoder;
-use attic::nix_store::{NixStore, StorePath, ValidPathInfo};
+use attic::nix_store::{NixStore, StorePath, StorePathHash, ValidPathInfo};
 use attic_server::narinfo::{Compression, NarInfo};
-use futures::stream::TryStreamExt;
+use futures::{future::join_all, stream::TryStreamExt};
 use gha_cache::{Api, Credentials};
 use tokio::sync::{
     mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
@@ -104,9 +107,30 @@ impl GhaCache {
             .compute_fs_closure_multi(store_paths, false, false, false)
             .await?;
 
-        for p in closure {
+        let mut store_path_map: HashMap<StorePathHash, ValidPathInfo> = {
+            use futures::stream::{self, StreamExt};
+            
+            stream::iter(closure.iter().map(|path| {
+                let store = store.clone();
+                let path = path.clone();
+                let path_hash = path.to_hash();
+
+                async move {
+                    let path_info = store.query_path_info(path).await?;
+                    Ok((path_hash, path_info))
+                }
+            }))
+            .buffer_unordered(50)  // Limit to 50 concurrent queries to nix database
+            .try_collect()
+            .await?
+        };
+
+        // We'll only upload unsigned NARs, expected signed NARs to come from an upstream cache
+        store_path_map.retain(|_, pi| pi.sigs.is_empty());
+
+        for (_, p) in store_path_map.iter() {
             self.channel_tx
-                .send(Request::Upload(p))
+                .send(Request::Upload(p.path.clone()))
                 .map_err(|_| Error::Internal("Cannot send upload message".to_owned()))?;
         }
 
