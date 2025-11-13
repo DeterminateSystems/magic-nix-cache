@@ -36,33 +36,23 @@ jobs:
       - name: Create the artifacts directory
         run: rm -rf ./artifacts && mkdir ./artifacts
 
-      - uses: actions/download-artifact@v4.1.8
+      # aarch64-darwin
+      - uses: ./.github/actions/download-persist
         with:
-          name: magic-nix-cache-ARM64-macOS
-          path: cache-binary-ARM64-macOS
-      - name: Persist the cache binary
-        run: cp ./cache-binary-ARM64-macOS/magic-nix-cache.closure.xz ./artifacts/ARM64-macOS
+          arch: ARM64
+          os: macOS
 
-      - uses: actions/download-artifact@v4.1.8
+      # x86_64-linux
+      - uses: ./.github/actions/download-persist
         with:
-          name: magic-nix-cache-X64-macOS
-          path: cache-binary-X64-macOS
-      - name: Persist the cache binary
-        run: cp ./cache-binary-X64-macOS/magic-nix-cache.closure.xz ./artifacts/X64-macOS
+          arch: X64
+          os: Linux
 
-      - uses: actions/download-artifact@v4.1.8
+      # aarch64-linux
+      - uses: ./.github/actions/download-persist
         with:
-          name: magic-nix-cache-X64-Linux
-          path: cache-binary-X64-Linux
-      - name: Persist the cache binary
-        run: cp ./cache-binary-X64-Linux/magic-nix-cache.closure.xz ./artifacts/X64-Linux
-
-      - uses: actions/download-artifact@v4.1.8
-        with:
-          name: magic-nix-cache-ARM64-Linux
-          path: cache-binary-ARM64-Linux
-      - name: Persist the cache binary
-        run: cp ./cache-binary-ARM64-Linux/magic-nix-cache.closure.xz ./artifacts/ARM64-Linux
+          arch: ARM64
+          os: Linux
 
       - uses: DeterminateSystems/push-artifact-ids@main
         with:
