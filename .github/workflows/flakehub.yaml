@@ -1,21 +1,21 @@
-name: "Publish every Git push to main to FlakeHub"
+name: Publish every Git push to main to FlakeHub
 
 on:
   push:
     branches:
-      - "main"
+      - main
 
 jobs:
   flakehub-publish:
-    runs-on: "ubuntu-latest"
+    runs-on: ubuntu-latest
     permissions:
-      id-token: "write"
-      contents: "read"
+      id-token: write
+      contents: read
     steps:
-      - uses: "actions/checkout@v4"
-      - uses: "DeterminateSystems/determinate-nix-action@v3"
-      - uses: "DeterminateSystems/flakehub-push@main"
+      - uses: actions/checkout@v5
+      - uses: DeterminateSystems/determinate-nix-action@v3
+      - uses: DeterminateSystems/flakehub-push@main
         with:
-          name: "DeterminateSystems/magic-nix-cache"
+          name: DeterminateSystems/magic-nix-cache
           rolling: true
-          visibility: "public"
+          visibility: public

@@ -26,7 +26,7 @@ jobs:
             system: ARM64-macOS
             runner: macos-latest-xlarge
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Nix on ${{ matrix.systems.system }}
         uses: DeterminateSystems/determinate-nix-action@v3
       - name: Set up FlakeHub Cache
