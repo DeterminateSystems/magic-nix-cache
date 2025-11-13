@@ -53,7 +53,6 @@ jobs:
       - name: Rename binaries for GH release
         run: |
           mv ./artifacts/{,magic-nix-cache-closure-}ARM64-macOS
-          mv ./artifacts/{,magic-nix-cache-closure-}X64-macOS
           mv ./artifacts/{,magic-nix-cache-closure-}X64-Linux
           mv ./artifacts/{,magic-nix-cache-closure-}ARM64-Linux
 
