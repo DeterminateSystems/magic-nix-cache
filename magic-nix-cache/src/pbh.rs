@@ -2,6 +2,7 @@ use std::io::Write as _;
 use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::anyhow;
 use anyhow::Context as _;
@@ -24,102 +25,108 @@ pub async fn subscribe_uds_post_build_hook(
 ) -> Result<()> {
     tokio::spawn(async move {
         let dnixd_uds_socket_path = &dnixd_uds_socket_path;
-        loop {
-            let Ok(socket_conn) = UnixStream::connect(dnixd_uds_socket_path).await else {
-                tracing::error!("built-paths: failed to connect to determinate-nixd's socket");
-                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-                continue;
-            };
-            let stream = TokioIo::new(socket_conn);
-            let executor: TokioExecutor = TokioExecutor::new();
 
-            let sender_conn = hyper::client::conn::http2::handshake(executor, stream).await;
-
-            let Ok((mut sender, conn)) = sender_conn else {
-                tracing::error!("built-paths: failed to http2 handshake");
-                continue;
-            };
-
-            // NOTE(colemickens): for now we just drop the joinhandle and let it keep running
-            let _join_handle = tokio::task::spawn(async move {
-                if let Err(err) = conn.await {
-                    tracing::error!("Connection failed: {:?}", err);
-                }
-            });
-
-            let request = http::Request::builder()
-                .method(http::Method::GET)
-                .uri("http://localhost/events")
-                .body(axum::body::Body::empty());
-            let Ok(request) = request else {
-                tracing::error!("built-paths: failed to create request to subscribe");
-                continue;
-            };
-
-            let response = sender.send_request(request).await;
-            let response = match response {
-                Ok(r) => r,
-                Err(e) => {
-                    tracing::error!("buit-paths: failed to send subscription request: {:?}", e);
-                    continue;
-                }
-            };
-            let mut data = response.into_data_stream();
-
-            while let Some(event_str) = data.next().await {
-                let event_str = match event_str {
-                    Ok(event) => event,
-                    Err(e) => {
-                        tracing::error!("built-paths: error while receiving: {}", e);
-                        break;
-                    }
-                };
-
-                let Some(event_str) = event_str.strip_prefix("data: ".as_bytes()) else {
-                    tracing::debug!("built-paths subscription: ignoring non-data frame");
-                    continue;
-                };
-                let Ok(event): core::result::Result<BuiltPathResponseEventV1, _> =
-                    serde_json::from_slice(event_str)
-                else {
-                    tracing::error!(
-                        "failed to decode built-path response as BuiltPathResponseEventV1"
-                    );
-                    continue;
-                };
-
-                let maybe_store_paths = event
-                    .outputs
-                    .iter()
-                    .map(|path| {
-                        state
-                            .store
-                            .follow_store_path(path)
-                            .map_err(|_| anyhow!("failed to collect store paths"))
-                    })
-                    .collect::<Result<Vec<_>>>();
-
-                let Ok(store_paths) = maybe_store_paths else {
-                    tracing::error!(
-                        "built-paths: encountered an error aggregating build store paths"
-                    );
-                    continue;
-                };
-
-                tracing::debug!("about to enqueue paths: {:?}", store_paths);
-                if let Err(e) = crate::api::enqueue_paths(&state, store_paths).await {
-                    tracing::error!(
-                        "built-paths: failed to enqueue paths for drv ({}): {}",
-                        event.drv.display(),
-                        e
-                    );
-                    continue;
-                }
+        tokio::select! {
+            _ = state.shutdown_token.cancelled() => {
+            }
+            _ = handle_events(Arc::clone(&state), dnixd_uds_socket_path) => {
             }
         }
     });
 
     Ok(())
+}
+
+async fn handle_events(state: State, dnixd_uds_socket_path: &PathBuf) -> ! {
+    loop {
+        let Ok(socket_conn) = UnixStream::connect(dnixd_uds_socket_path).await else {
+            tracing::error!("built-paths: failed to connect to determinate-nixd's socket");
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            continue;
+        };
+        let stream = TokioIo::new(socket_conn);
+        let executor: TokioExecutor = TokioExecutor::new();
+
+        let sender_conn = hyper::client::conn::http2::handshake(executor, stream).await;
+
+        let Ok((mut sender, conn)) = sender_conn else {
+            tracing::error!("built-paths: failed to http2 handshake");
+            continue;
+        };
+
+        // NOTE(colemickens): for now we just drop the joinhandle and let it keep running
+        let _join_handle = tokio::task::spawn(async move {
+            if let Err(err) = conn.await {
+                tracing::error!("Connection failed: {:?}", err);
+            }
+        });
+
+        let request = http::Request::builder()
+            .method(http::Method::GET)
+            .uri("http://localhost/events")
+            .body(axum::body::Body::empty());
+        let Ok(request) = request else {
+            tracing::error!("built-paths: failed to create request to subscribe");
+            continue;
+        };
+
+        let response = sender.send_request(request).await;
+        let response = match response {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("built-paths: failed to send subscription request: {:?}", e);
+                continue;
+            }
+        };
+        let mut data = response.into_data_stream();
+
+        while let Some(event_str) = data.next().await {
+            let event_str = match event_str {
+                Ok(event) => event,
+                Err(e) => {
+                    tracing::error!("built-paths: error while receiving: {}", e);
+                    break;
+                }
+            };
+
+            let Some(event_str) = event_str.strip_prefix("data: ".as_bytes()) else {
+                tracing::debug!("built-paths subscription: ignoring non-data frame");
+                continue;
+            };
+            let Ok(event): core::result::Result<BuiltPathResponseEventV1, _> =
+                serde_json::from_slice(event_str)
+            else {
+                tracing::error!("failed to decode built-path response as BuiltPathResponseEventV1");
+                continue;
+            };
+
+            let maybe_store_paths = event
+                .outputs
+                .iter()
+                .map(|path| {
+                    state
+                        .store
+                        .follow_store_path(path)
+                        .map_err(|_| anyhow!("failed to collect store paths"))
+                })
+                .collect::<Result<Vec<_>>>();
+
+            let Ok(store_paths) = maybe_store_paths else {
+                tracing::error!("built-paths: encountered an error aggregating build store paths");
+                continue;
+            };
+
+            tracing::debug!("about to enqueue paths: {:?}", store_paths);
+            if let Err(e) = crate::api::enqueue_paths(&state, store_paths).await {
+                tracing::error!(
+                    "built-paths: failed to enqueue paths for drv ({}): {}",
+                    event.drv.display(),
+                    e
+                );
+                continue;
+            }
+        }
+    }
 }
 
 pub async fn setup_legacy_post_build_hook(
