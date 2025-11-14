@@ -13,7 +13,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Check health of flake.lock
         uses: DeterminateSystems/flake-checker-action@main
@@ -51,18 +51,16 @@ jobs:
             runner: ubuntu-22.04
           - system: ARM64-Linux
             runner: namespace-profile-default-arm64
-          - system: X64-macOS
-            runner: macos-14-large
           - system: ARM64-macOS
             runner: macos-latest-xlarge
     permissions:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download closure for ${{ matrix.systems.system }}
-        uses: actions/download-artifact@v4.1.8
+        uses: actions/download-artifact@v6
         with:
           name: ${{ env.ARTIFACT_KEY }}
           path: ${{ env.ARTIFACT_KEY }}

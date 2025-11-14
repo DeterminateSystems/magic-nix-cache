@@ -2,10 +2,8 @@
   description = "GitHub Actions-powered Nix binary cache";
 
   inputs = {
-    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
-
+    nixpkgs.url = "https://flakehub.com/f/DeterminateSystems/secure/0";
     crane.url = "https://flakehub.com/f/ipetkov/crane/*";
-
     nix.url = "https://flakehub.com/f/NixOS/nix/=2.27.*";
   };
 
@@ -15,7 +13,6 @@
         "aarch64-linux"
         "x86_64-linux"
         "aarch64-darwin"
-        "x86_64-darwin"
       ];
 
       forEachSupportedSystem = f: inputs.nixpkgs.lib.genAttrs supportedSystems (system: f rec {

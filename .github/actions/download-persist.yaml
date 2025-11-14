@@ -1,0 +1,25 @@
+name: Download and persist artifact
+
+inputs:
+  arch:
+    type: choice
+    options:
+      - X64
+      - ARM64
+    required: true
+  os:
+    type: choice
+    options:
+      - Linux
+      - macOS
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@v6
+      with:
+        name: magic-nix-cache-${{ inputs.arch }}-${{ inputs.os }}
+        path: cache-binary-${{ inputs.arch }}-${{ inputs.os }}
+    - shell: bash
+      run: cp ./cache-binary-${{ inputs.arch }}-${{ inputs.os }}/magic-nix-cache.closure.xz ./artifacts/${{ inputs.arch }}-${{ inputs.os }}
