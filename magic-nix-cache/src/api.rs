@@ -110,11 +110,7 @@ async fn workflow_finish(
         tracing::info!("FlakeHub cache is not enabled, not uploading anything to it");
     }
 
-    if let Some(sender) = state.shutdown_sender.lock().await.take() {
-        sender
-            .send(())
-            .map_err(|_| Error::Internal("Sending shutdown server message".to_owned()))?;
-    }
+    state.shutdown_token.cancel();
 
     // NOTE(cole-h): see `init_logging`
     if let Some(logfile) = &state.logfile {

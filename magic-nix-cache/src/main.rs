@@ -37,7 +37,7 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::{oneshot, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock};
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -204,9 +204,6 @@ struct StateInner {
     /// The upstream cache.
     upstream: Option<String>,
 
-    /// The sender half of the oneshot channel to trigger a shutdown.
-    shutdown_sender: Mutex<Option<oneshot::Sender<()>>>,
-
     /// Set of store path hashes that are not present in GHAC.
     narinfo_negative_cache: Arc<RwLock<HashSet<String>>>,
 
@@ -224,6 +221,9 @@ struct StateInner {
 
     /// The paths in the Nix store when Magic Nix Cache started, if store diffing is enabled.
     original_paths: Option<Mutex<HashSet<PathBuf>>>,
+
+    /// A CancellationToken that will be cancelled once magic-nix-cache starts shutting down.
+    shutdown_token: tokio_util::sync::CancellationToken,
 }
 
 #[derive(Debug, Clone)]
@@ -443,19 +443,19 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
         None
     };
 
-    let (shutdown_sender, shutdown_receiver) = oneshot::channel();
+    let shutdown_token = tokio_util::sync::CancellationToken::new();
 
     let original_paths = args.diff_store.then_some(Mutex::new(HashSet::new()));
     let state = Arc::new(StateInner {
         gha_cache,
         upstream: args.upstream.clone(),
-        shutdown_sender: Mutex::new(Some(shutdown_sender)),
         narinfo_negative_cache,
         metrics,
         store,
         flakehub_state: RwLock::new(flakehub_state),
         logfile: guard.logfile,
         original_paths,
+        shutdown_token: shutdown_token.clone(),
     });
 
     if dnixd_available == Dnixd::Available {
@@ -551,7 +551,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
     let listener = tokio::net::TcpListener::bind(&args.listen).await?;
     let ret = axum::serve(listener, app.into_make_service())
         .with_graceful_shutdown(async move {
-            shutdown_receiver.await.ok();
+            shutdown_token.cancelled_owned().await;
             tracing::info!("Shutting down");
         })
         .await;

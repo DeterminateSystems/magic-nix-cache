@@ -52,7 +52,7 @@ jobs:
           - system: ARM64-Linux
             runner: namespace-profile-default-arm64
           - system: X64-macOS
-            runner: macos-14-large
+            runner: macos-latest-xlarge
           - system: ARM64-macOS
             runner: macos-latest-xlarge
     permissions:
