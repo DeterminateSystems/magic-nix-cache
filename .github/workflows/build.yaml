@@ -41,8 +41,10 @@ jobs:
 
       - name: Build package and create closure for ${{ matrix.systems.system }}
         run: |
-          nix build .# -L --fallback && \
+          nix build .#packages.$SYSTEM.default -L --fallback && \
             nix-store --export $(nix-store -qR ./result) | xz -9 > "${{ env.ARCHIVE_NAME }}"
+        env:
+          SYSTEM: ${{ matrix.systems.nix-system }}
 
       - name: Upload magic-nix-cache closure for ${{ matrix.systems.system }}
         uses: actions/upload-artifact@v4.6.0
