@@ -411,6 +411,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
             format!("{:?}", args.github_cache_preference()).into(),
         )
         .await;
+
     let gha_cache = if (args.github_cache_preference() == CacheTrinary::Enabled)
         || (args.github_cache_preference() == CacheTrinary::NoPreference
             && flakehub_state.is_none())
@@ -428,10 +429,6 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
             narinfo_negative_cache.clone(),
         )
         .with_context(|| "Failed to initialize GitHub Actions Cache API")?;
-
-        nix_conf
-            .write_all(format!("extra-substituters = http://{}?trusted=1&compression=zstd&parallel-compression=true&priority=1\n", args.listen).as_bytes())
-            .with_context(|| "Writing to nix.conf")?;
 
         tracing::info!("Native GitHub Action cache is enabled.");
         Some(gha_cache)
@@ -458,16 +455,6 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
         shutdown_token: shutdown_token.clone(),
     });
 
-    if dnixd_available == Dnixd::Available {
-        tracing::info!("Subscribing to Determinate Nixd build events.");
-        crate::pbh::subscribe_uds_post_build_hook(dnixd_uds_socket_path, state.clone()).await?;
-    } else {
-        tracing::info!("Patching nix.conf to use a post-build-hook.");
-        crate::pbh::setup_legacy_post_build_hook(&args.listen, &mut nix_conf).await?;
-    }
-
-    drop(nix_conf);
-
     let app = Router::new()
         .route("/", get(root))
         .merge(api::get_router())
@@ -480,7 +467,31 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
 
     let app = app.layer(Extension(state.clone()));
 
-    tracing::info!("Listening on {}", args.listen);
+    let listener = tokio::net::TcpListener::bind(&args.listen).await?;
+    let serve = axum::serve(listener, app.into_make_service()).with_graceful_shutdown(async move {
+        shutdown_token.cancelled_owned().await;
+        tracing::info!("Shutting down");
+    });
+
+    let addr = serve.local_addr().unwrap();
+
+    tracing::info!("Listening on {addr}");
+
+    if state.gha_cache.is_some() {
+        nix_conf
+            .write_all(format!("extra-substituters = http://{addr}?trusted=1&compression=zstd&parallel-compression=true&priority=1\n").as_bytes())
+            .with_context(|| "Writing to nix.conf")?;
+    }
+
+    if dnixd_available == Dnixd::Available {
+        tracing::info!("Subscribing to Determinate Nixd build events.");
+        crate::pbh::subscribe_uds_post_build_hook(dnixd_uds_socket_path, state.clone()).await?;
+    } else {
+        tracing::info!("Patching nix.conf to use a post-build-hook.");
+        crate::pbh::setup_legacy_post_build_hook(&addr, &mut nix_conf).await?;
+    }
+
+    drop(nix_conf);
 
     // Notify of startup via HTTP
     if let Some(startup_notification_url) = args.startup_notification_url {
@@ -489,7 +500,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
         let response = reqwest::Client::new()
             .post(startup_notification_url)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body("{}")
+            .body(format!("{{\"address\": \"{addr}\"}}"))
             .send()
             .await;
         match response {
@@ -513,7 +524,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
 
     // Notify of startup by writing "1" to the specified file
     if let Some(startup_notification_file_path) = args.startup_notification_file {
-        let file_contents: &[u8] = b"1";
+        let file_contents = format!("{addr}");
 
         tracing::debug!("Startup notification via file at {startup_notification_file_path:?}");
 
@@ -536,7 +547,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
                 )
             })?;
         notification_file
-            .write_all(file_contents)
+            .write_all(file_contents.as_bytes())
             .await
             .with_context(|| {
                 format!(
@@ -548,18 +559,10 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
         tracing::debug!("Created startup notification file at {startup_notification_file_path:?}");
     }
 
-    let listener = tokio::net::TcpListener::bind(&args.listen).await?;
-    let ret = axum::serve(listener, app.into_make_service())
-        .with_graceful_shutdown(async move {
-            shutdown_token.cancelled_owned().await;
-            tracing::info!("Shutting down");
-        })
-        .await;
-
     // Notify diagnostics endpoint
     state.metrics.send().await;
 
-    ret?;
+    serve.await?;
 
     Ok(())
 }
