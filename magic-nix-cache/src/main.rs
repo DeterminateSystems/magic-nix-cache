@@ -257,6 +257,9 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
     tracing::debug!("Running in {}", environment.to_string());
     args.validate(environment)?;
 
+    let listener = tokio::net::TcpListener::bind(&args.listen).await?;
+    let listener_addr = listener.local_addr().expect("failed to get local address");
+
     let metrics = Arc::new(telemetry::TelemetryReport::new(recorder.clone()));
 
     let dnixd_uds_socket_dir: &Path = Path::new(&DETERMINATE_STATE_DIR);
@@ -411,6 +414,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
             format!("{:?}", args.github_cache_preference()).into(),
         )
         .await;
+
     let gha_cache = if (args.github_cache_preference() == CacheTrinary::Enabled)
         || (args.github_cache_preference() == CacheTrinary::NoPreference
             && flakehub_state.is_none())
@@ -430,7 +434,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
         .with_context(|| "Failed to initialize GitHub Actions Cache API")?;
 
         nix_conf
-            .write_all(format!("extra-substituters = http://{}?trusted=1&compression=zstd&parallel-compression=true&priority=1\n", args.listen).as_bytes())
+            .write_all(format!("extra-substituters = http://{}?trusted=1&compression=zstd&parallel-compression=true&priority=1\n", &listener_addr).as_bytes())
             .with_context(|| "Writing to nix.conf")?;
 
         tracing::info!("Native GitHub Action cache is enabled.");
@@ -463,7 +467,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
         crate::pbh::subscribe_uds_post_build_hook(dnixd_uds_socket_path, state.clone()).await?;
     } else {
         tracing::info!("Patching nix.conf to use a post-build-hook.");
-        crate::pbh::setup_legacy_post_build_hook(&args.listen, &mut nix_conf).await?;
+        crate::pbh::setup_legacy_post_build_hook(&listener_addr, &mut nix_conf).await?;
     }
 
     drop(nix_conf);
@@ -480,7 +484,9 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
 
     let app = app.layer(Extension(state.clone()));
 
-    tracing::info!("Listening on {}", args.listen);
+    let startup_blob = serde_json::json!({
+        "address": listener_addr
+    });
 
     // Notify of startup via HTTP
     if let Some(startup_notification_url) = args.startup_notification_url {
@@ -489,7 +495,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
         let response = reqwest::Client::new()
             .post(startup_notification_url)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body("{}")
+            .body(startup_blob.to_string())
             .send()
             .await;
         match response {
@@ -513,8 +519,6 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
 
     // Notify of startup by writing "1" to the specified file
     if let Some(startup_notification_file_path) = args.startup_notification_file {
-        let file_contents: &[u8] = b"1";
-
         tracing::debug!("Startup notification via file at {startup_notification_file_path:?}");
 
         if let Some(parent_dir) = startup_notification_file_path.parent() {
@@ -536,7 +540,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
                 )
             })?;
         notification_file
-            .write_all(file_contents)
+            .write_all(startup_blob.to_string().as_bytes())
             .await
             .with_context(|| {
                 format!(
@@ -548,14 +552,12 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
         tracing::debug!("Created startup notification file at {startup_notification_file_path:?}");
     }
 
-    let listener = tokio::net::TcpListener::bind(&args.listen).await?;
     let ret = axum::serve(listener, app.into_make_service())
         .with_graceful_shutdown(async move {
             shutdown_token.cancelled_owned().await;
             tracing::info!("Shutting down");
         })
         .await;
-
     // Notify diagnostics endpoint
     state.metrics.send().await;
 
