@@ -496,7 +496,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
         let response = reqwest::Client::new()
             .post(startup_notification_url)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(format!("{{\"address\": \"{addr}\"}}"))
+            .body(serde_json::json!({"address": listener_addr}).to_string())
             .send()
             .await;
         match response {
