@@ -489,6 +489,10 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
         tracing::info!("Shutting down");
     });
 
+    let startup_blob = serde_json::json!({
+        "address": listener_addr
+    });
+
     // Notify of startup via HTTP
     if let Some(startup_notification_url) = args.startup_notification_url {
         tracing::debug!("Startup notification via HTTP POST to {startup_notification_url}");
@@ -496,7 +500,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
         let response = reqwest::Client::new()
             .post(startup_notification_url)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(serde_json::json!({"address": listener_addr}).to_string())
+            .body(startup_blob.to_string())
             .send()
             .await;
         match response {
@@ -520,8 +524,6 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
 
     // Notify of startup by writing "1" to the specified file
     if let Some(startup_notification_file_path) = args.startup_notification_file {
-        let file_contents = format!("{addr}");
-
         tracing::debug!("Startup notification via file at {startup_notification_file_path:?}");
 
         if let Some(parent_dir) = startup_notification_file_path.parent() {
@@ -543,7 +545,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
                 )
             })?;
         notification_file
-            .write_all(file_contents.as_bytes())
+            .write_all(startup_blob.to_string().as_bytes())
             .await
             .with_context(|| {
                 format!(
