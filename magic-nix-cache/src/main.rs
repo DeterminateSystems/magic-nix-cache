@@ -552,7 +552,6 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
         tracing::debug!("Created startup notification file at {startup_notification_file_path:?}");
     }
 
-    let listener = tokio::net::TcpListener::bind(&args.listen).await?;
     let ret = axum::serve(listener, app.into_make_service())
         .with_graceful_shutdown(async move {
             shutdown_token.cancelled_owned().await;
