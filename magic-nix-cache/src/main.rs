@@ -257,6 +257,9 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
     tracing::debug!("Running in {}", environment.to_string());
     args.validate(environment)?;
 
+    let listener = tokio::net::TcpListener::bind(&args.listen).await?;
+    let listener_addr = listener.local_addr().expect("failed to get local address");
+
     let metrics = Arc::new(telemetry::TelemetryReport::new(recorder.clone()));
 
     let dnixd_uds_socket_dir: &Path = Path::new(&DETERMINATE_STATE_DIR);
@@ -430,6 +433,10 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
         )
         .with_context(|| "Failed to initialize GitHub Actions Cache API")?;
 
+        nix_conf
+            .write_all(format!("extra-substituters = http://{}?trusted=1&compression=zstd&parallel-compression=true&priority=1\n", &listener_addr).as_bytes())
+            .with_context(|| "Writing to nix.conf")?;
+
         tracing::info!("Native GitHub Action cache is enabled.");
         Some(gha_cache)
     } else {
@@ -455,6 +462,16 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
         shutdown_token: shutdown_token.clone(),
     });
 
+    if dnixd_available == Dnixd::Available {
+        tracing::info!("Subscribing to Determinate Nixd build events.");
+        crate::pbh::subscribe_uds_post_build_hook(dnixd_uds_socket_path, state.clone()).await?;
+    } else {
+        tracing::info!("Patching nix.conf to use a post-build-hook.");
+        crate::pbh::setup_legacy_post_build_hook(&listener_addr, &mut nix_conf).await?;
+    }
+
+    drop(nix_conf);
+
     let app = Router::new()
         .route("/", get(root))
         .merge(api::get_router())
@@ -467,31 +484,10 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
 
     let app = app.layer(Extension(state.clone()));
 
-    let listener = tokio::net::TcpListener::bind(&args.listen).await?;
     let serve = axum::serve(listener, app.into_make_service()).with_graceful_shutdown(async move {
         shutdown_token.cancelled_owned().await;
         tracing::info!("Shutting down");
     });
-
-    let addr = serve.local_addr().unwrap();
-
-    tracing::info!("Listening on {addr}");
-
-    if state.gha_cache.is_some() {
-        nix_conf
-            .write_all(format!("extra-substituters = http://{addr}?trusted=1&compression=zstd&parallel-compression=true&priority=1\n").as_bytes())
-            .with_context(|| "Writing to nix.conf")?;
-    }
-
-    if dnixd_available == Dnixd::Available {
-        tracing::info!("Subscribing to Determinate Nixd build events.");
-        crate::pbh::subscribe_uds_post_build_hook(dnixd_uds_socket_path, state.clone()).await?;
-    } else {
-        tracing::info!("Patching nix.conf to use a post-build-hook.");
-        crate::pbh::setup_legacy_post_build_hook(&addr, &mut nix_conf).await?;
-    }
-
-    drop(nix_conf);
 
     // Notify of startup via HTTP
     if let Some(startup_notification_url) = args.startup_notification_url {
