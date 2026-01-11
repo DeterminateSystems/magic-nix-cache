@@ -172,6 +172,18 @@ async fn upload_path(
     // Upload the NAR.
     let nar_path = format!("{}.nar.zstd", path_info.nar_hash.to_base32());
 
+    // This limit was chosen arbitrarily, to reduce the chances of hitting GHA
+    // cache API limits.  An even better filter would be “cost of rebuilding
+    // this derivation”, but that metric is not readily available.
+    if path_info.nar_size < 5000 {
+        tracing::debug!(
+            "Skipping small file '{}' ({}b)",
+            nar_path,
+            path_info.nar_size
+        );
+        return Ok(());
+    }
+
     let nar_allocation = api.allocate_file_with_random_suffix(&nar_path).await?;
 
     let nar_stream = store.nar_from_path(path.clone());
