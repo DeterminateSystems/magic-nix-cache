@@ -21,6 +21,9 @@ pub struct GhaCache {
     worker_result: RwLock<Option<tokio::task::JoinHandle<Result<()>>>>,
 
     channel_tx: UnboundedSender<Request>,
+
+    /// Cache keys that already exist (fetched on startup, updated on upload)
+    existing_keys: Arc<RwLock<HashSet<String>>>,
 }
 
 #[derive(Debug)]
@@ -30,7 +33,7 @@ enum Request {
 }
 
 impl GhaCache {
-    pub fn new(
+    pub async fn new(
         credentials: Credentials,
         cache_version: Option<String>,
         store: Arc<NixStore>,
@@ -55,7 +58,20 @@ impl GhaCache {
 
         let api = Arc::new(api);
 
+        // Fetch existing cache keys (best effort - don't fail if this doesn't work)
+        let existing_keys = Arc::new(RwLock::new(match api.list_existing_cache_keys().await {
+            Ok(keys) => keys,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to list existing caches: {}. Uploads may be redundant.",
+                    e
+                );
+                HashSet::new()
+            }
+        }));
+
         let api2 = api.clone();
+        let existing_keys2 = existing_keys.clone();
 
         let worker_result = tokio::task::spawn(async move {
             worker(
@@ -64,6 +80,7 @@ impl GhaCache {
                 channel_rx,
                 metrics,
                 narinfo_negative_cache.clone(),
+                existing_keys2,
             )
             .await
         });
@@ -72,10 +89,14 @@ impl GhaCache {
             api,
             worker_result: RwLock::new(Some(worker_result)),
             channel_tx,
+            existing_keys,
         })
     }
 
     pub async fn shutdown(&self) -> Result<()> {
+        // Signal API to stop retrying
+        self.api.signal_shutdown();
+
         if let Some(worker_result) = self.worker_result.write().await.take() {
             self.channel_tx
                 .send(Request::Shutdown)
@@ -120,17 +141,36 @@ async fn worker(
     mut channel_rx: UnboundedReceiver<Request>,
     metrics: Arc<telemetry::TelemetryReport>,
     narinfo_negative_cache: Arc<RwLock<HashSet<String>>>,
+    existing_keys: Arc<RwLock<HashSet<String>>>,
 ) -> Result<()> {
     let mut done = HashSet::new();
 
     while let Some(req) = channel_rx.recv().await {
         match req {
             Request::Shutdown => {
+                tracing::info!("Worker received shutdown signal, draining queue...");
+                // Drain remaining items but don't retry on failure
+                while let Ok(req) = channel_rx.try_recv() {
+                    if let Request::Upload(path) = req {
+                        if done.insert(path.clone()) {
+                            // Best effort upload, no retries since we're shutting down
+                            let _ = upload_path(
+                                api,
+                                store.clone(),
+                                &path,
+                                metrics.clone(),
+                                narinfo_negative_cache.clone(),
+                                existing_keys.clone(),
+                            )
+                            .await;
+                        }
+                    }
+                }
                 break;
             }
             Request::Upload(path) => {
                 if api.circuit_breaker_tripped() {
-                    tracing::trace!("GitHub Actions gave us a 429, so we're done.",);
+                    tracing::trace!("Circuit breaker tripped, skipping upload");
                     continue;
                 }
 
@@ -144,14 +184,23 @@ async fn worker(
                     &path,
                     metrics.clone(),
                     narinfo_negative_cache.clone(),
+                    existing_keys.clone(),
                 )
                 .await
                 {
-                    tracing::error!(
-                        "Upload of path '{}' failed: {}",
-                        store.get_full_path(&path).display(),
-                        err
-                    );
+                    match err {
+                        Error::GhaCache(gha_cache::Error::ShuttingDown) => {
+                            tracing::info!("Upload cancelled due to shutdown");
+                            // Don't log as error, this is expected
+                        }
+                        _ => {
+                            tracing::error!(
+                                "Upload of path '{}' failed: {}",
+                                store.get_full_path(&path).display(),
+                                err
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -166,8 +215,23 @@ async fn upload_path(
     path: &StorePath,
     metrics: Arc<telemetry::TelemetryReport>,
     narinfo_negative_cache: Arc<RwLock<HashSet<String>>>,
+    existing_keys: Arc<RwLock<HashSet<String>>>,
 ) -> Result<()> {
     let path_info = store.query_path_info(path.clone()).await?;
+
+    // Check if this path already exists in the cache
+    let narinfo_key_prefix = format!("{}.narinfo", path.to_hash().as_str());
+    {
+        let keys = existing_keys.read().await;
+        if keys.iter().any(|k| k.starts_with(&narinfo_key_prefix)) {
+            tracing::debug!(
+                "Skipping upload of '{}' - already exists in cache",
+                store.get_full_path(path).display()
+            );
+            metrics.uploads_skipped.incr();
+            return Ok(());
+        }
+    }
 
     // Upload the NAR.
     let nar_path = format!("{}.nar.zstd", path_info.nar_hash.to_base32());
@@ -210,6 +274,10 @@ async fn upload_path(
         .write()
         .await
         .remove(&path.to_hash().to_string());
+
+    // Add to existing_keys to prevent re-upload in same run
+    // Note: We use the full key with suffix that was allocated
+    existing_keys.write().await.insert(narinfo_path.clone());
 
     tracing::info!(
         "Uploaded '{}' to the GitHub Action Cache",

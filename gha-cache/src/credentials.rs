@@ -33,6 +33,19 @@ pub struct Credentials {
     /// This is the `ACTIONS_CACHE_SERVICE_V2` environment variable.
     #[serde(alias = "ACTIONS_CACHE_SERVICE_V2")]
     pub(crate) service_v2: String,
+
+    /// GitHub token for REST API calls (listing caches).
+    ///
+    /// This is the `GITHUB_TOKEN` environment variable.
+    #[derivative(Debug = "ignore")]
+    #[serde(alias = "GITHUB_TOKEN")]
+    pub(crate) github_token: Option<String>,
+
+    /// Repository in "owner/repo" format.
+    ///
+    /// This is the `GITHUB_REPOSITORY` environment variable.
+    #[serde(alias = "GITHUB_REPOSITORY")]
+    pub(crate) github_repository: Option<String>,
 }
 
 impl Credentials {
@@ -43,11 +56,17 @@ impl Credentials {
         let runtime_token = env::var("ACTIONS_RUNTIME_TOKEN").ok()?;
         let service_v2 = env::var("ACTIONS_CACHE_SERVICE_V2").ok()?;
 
+        // Optional - for listing caches via REST API
+        let github_token = env::var("GITHUB_TOKEN").ok();
+        let github_repository = env::var("GITHUB_REPOSITORY").ok();
+
         Some(Self {
             cache_url,
             results_url,
             runtime_token,
             service_v2,
+            github_token,
+            github_repository,
         })
     }
 }
