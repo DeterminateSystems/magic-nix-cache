@@ -6,7 +6,9 @@
 
     crane.url = "https://flakehub.com/f/ipetkov/crane/*";
 
-    nix.url = "https://flakehub.com/f/DeterminateSystems/nix-src/=3.16.*";
+    #nix.url = "https://flakehub.com/f/DeterminateSystems/nix-src/=3.16.*";
+    nix.url = "github:DeterminateSystems/nix-src/provenance-tags";
+
   };
 
   outputs =
