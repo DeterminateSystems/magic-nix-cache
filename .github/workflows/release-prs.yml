@@ -57,7 +57,7 @@ jobs:
       - name: Persist the cache binary
         run: cp ./cache-binary-ARM64-Linux/magic-nix-cache.closure.xz ./artifacts/ARM64-Linux
 
-      - uses: DeterminateSystems/push-artifact-ids@main
+      - uses: DeterminateSystems/push-artifact-ids@push-mrzqkvvnmqtk
         with:
           s3_upload_role: ${{ secrets.AWS_S3_UPLOAD_ROLE }}
           bucket: ${{ secrets.AWS_S3_UPLOAD_BUCKET }}
