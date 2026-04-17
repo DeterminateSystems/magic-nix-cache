@@ -6,121 +6,157 @@
 
     crane.url = "https://flakehub.com/f/ipetkov/crane/*";
 
-    nix.url = "https://flakehub.com/f/NixOS/nix/=2.27.*";
+    nix.url = "https://flakehub.com/f/DeterminateSystems/nix-src/=3.16.3";
   };
 
-  outputs = inputs:
+  outputs =
+    inputs:
     let
       supportedSystems = [
         "aarch64-linux"
         "x86_64-linux"
         "aarch64-darwin"
-        "x86_64-darwin"
       ];
 
-      forEachSupportedSystem = f: inputs.nixpkgs.lib.genAttrs supportedSystems (system: f rec {
-        pkgs = import inputs.nixpkgs {
-          inherit system;
-          overlays = [
-            inputs.self.overlays.default
-          ];
-        };
-        inherit system;
-      });
+      forEachSupportedSystem =
+        f:
+        inputs.nixpkgs.lib.genAttrs supportedSystems (
+          system:
+          f rec {
+            pkgs = import inputs.nixpkgs {
+              inherit system;
+              overlays = [
+              ];
+            };
+            inherit system;
+          }
+        );
     in
     {
 
-      overlays.default = final: prev:
-      let
-          craneLib = inputs.crane.mkLib final;
+      packages = forEachSupportedSystem (
+        { pkgs, system, ... }:
+        let
+          pkgs' = pkgs.pkgsStatic;
+          craneLib = inputs.crane.mkLib pkgs';
           crateName = craneLib.crateNameFromCargoToml {
             cargoToml = ./magic-nix-cache/Cargo.toml;
           };
+
+          rustTargetSpec = pkgs'.stdenv.hostPlatform.rust.rustcTargetSpec;
+          rustTargetSpecEnv = pkgs'.lib.toUpper (builtins.replaceStrings [ "-" ] [ "_" ] rustTargetSpec);
 
           commonArgs = {
             inherit (crateName) pname version;
             src = inputs.self;
 
-            nativeBuildInputs = with final; [
+            depsBuildBuild = with pkgs'; [
+              buildPackages.stdenv.cc
+              lld
+            ];
+
+            nativeBuildInputs = with pkgs'; [
               pkg-config
               protobuf
             ];
 
             buildInputs = [
-              inputs.nix.packages.${final.stdenv.system}.default
-              final.boost
+              inputs.nix.packages.${system}.nix-util-static
+              inputs.nix.packages.${system}.nix-store-static
+              inputs.nix.packages.${system}.nix-main-static
+              inputs.nix.packages.${system}.nix-expr-static
+              pkgs'.boost
             ];
+
+            doIncludeCrossToolchainEnv = false;
+
+            env.CARGO_BUILD_TARGET = rustTargetSpec;
+            env."CARGO_TARGET_${rustTargetSpecEnv}_LINKER" = "${pkgs'.stdenv.cc.targetPrefix}cc";
           };
 
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
-      in
-      {
-        magic-nix-cache = craneLib.buildPackage (commonArgs // {
-          inherit cargoArtifacts;
-        });
-      };
+        in
+        rec {
+          magic-nix-cache = craneLib.buildPackage (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+            }
+          );
 
-      packages = forEachSupportedSystem ({ pkgs, ... }: rec {
-        magic-nix-cache = pkgs.magic-nix-cache;
-        default = magic-nix-cache;
+          default = magic-nix-cache;
 
-        veryLongChain =
-          let
-            ctx = ./README.md;
+          veryLongChain =
+            let
+              ctx = ./README.md;
 
-            # Function to write the current date to a file
-            startFile =
-              pkgs.stdenv.mkDerivation {
+              # Function to write the current date to a file
+              startFile = pkgs.stdenv.mkDerivation {
                 name = "start-file";
                 buildCommand = ''
                   cat ${ctx} > $out
                 '';
               };
 
-            # Recursive function to create a chain of derivations
-            createChain = n: startFile:
-              pkgs.stdenv.mkDerivation {
-                name = "chain-${toString n}";
-                src =
-                  if n == 0 then
-                    startFile
-                  else createChain (n - 1) startFile;
-                buildCommand = ''
-                  echo $src  > $out
-                '';
-              };
+              # Recursive function to create a chain of derivations
+              createChain =
+                n: startFile:
+                pkgs.stdenv.mkDerivation {
+                  name = "chain-${toString n}";
+                  src = if n == 0 then startFile else createChain (n - 1) startFile;
+                  buildCommand = ''
+                    echo $src  > $out
+                  '';
+                };
 
-          in
-          # Starting point of the chain
-          createChain 200 startFile;
-      });
+            in
+            # Starting point of the chain
+            createChain 200 startFile;
+        }
+      );
 
-      devShells = forEachSupportedSystem ({ system, pkgs }: {
-        default = pkgs.mkShell {
-          packages = with pkgs; [
-            rustc
-            cargo
-            clippy
-            rustfmt
-            rust-analyzer
+      devShells = forEachSupportedSystem (
+        { system, pkgs }:
+        let
+          pkgs' = if pkgs.stdenv.isDarwin then pkgs else pkgs.pkgsStatic;
+          rustTargetSpec = pkgs'.stdenv.hostPlatform.rust.rustcTargetSpec;
+          rustTargetSpecEnv = pkgs'.lib.toUpper (builtins.replaceStrings [ "-" ] [ "_" ] rustTargetSpec);
+        in
+        {
+          default = pkgs'.mkShell {
+            env = {
+              CARGO_BUILD_TARGET = rustTargetSpec;
+              "CARGO_TARGET_${rustTargetSpecEnv}_LINKER" = "${pkgs'.stdenv.cc.targetPrefix}cc";
+              RUST_SRC_PATH = "${pkgs.rustPlatform.rustcSrc}/library";
+            };
 
-            inputs.nix.packages.${stdenv.system}.default # for linking attic
-            boost # for linking attic
-            protobuf # for protoc/prost
-            bashInteractive
-            pkg-config
+            inputsFrom = [ inputs.self.packages.${system}.default ];
 
-            cargo-bloat
-            cargo-edit
-            cargo-udeps
-            cargo-watch
-            bacon
+            packages =
+              with pkgs;
+              [
+                bashInteractive
 
-            age
-          ];
+                cargo
+                rustfmt
+                rust-analyzer
 
-          RUST_SRC_PATH = "${pkgs.rustPlatform.rustcSrc}/library";
-        };
-      });
+                protobuf # for protoc/prost
+
+                cargo-bloat
+                cargo-edit
+                cargo-udeps
+                cargo-watch
+                bacon
+
+                age
+              ]
+              ++ (with pkgs'; [
+                rustc
+                clippy
+              ]);
+          };
+        }
+      );
     };
 }

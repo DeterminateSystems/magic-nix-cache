@@ -96,7 +96,7 @@ async fn handle_events(state: State, dnixd_uds_socket_path: &PathBuf) -> ! {
             let Ok(event): core::result::Result<BuiltPathResponseEventV1, _> =
                 serde_json::from_slice(event_str)
             else {
-                tracing::error!("failed to decode built-path response as BuiltPathResponseEventV1");
+                tracing::error!(event_str = %String::from_utf8_lossy(event_str), "failed to decode built-path response as BuiltPathResponseEventV1");
                 continue;
             };
 

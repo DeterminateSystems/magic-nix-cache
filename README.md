@@ -67,7 +67,7 @@ The GitHub Actions Cache has a rate limit on reads and writes.
 Occasionally, large projects or large rebuilds may exceed those rate-limits, and you'll see evidence of that in your logs.
 The error looks like this:
 
-```
+```text
 error: unable to download 'http://127.0.0.1:37515/<...>': HTTP error 418
        response body:
        GitHub API error: API error (429 Too Many Requests): StructuredApiError { message: "Request was blocked due to exceeding usage of resource 'Count' in namespace ''." }

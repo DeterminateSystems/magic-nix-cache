@@ -14,7 +14,6 @@ use crate::github::actions::results::api::v1::{
     GetCacheEntryDownloadUrlRequest,
 };
 use crate::util::read_chunk_async;
-use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use futures::future;
 use rand::{distributions::Alphanumeric, Rng};
@@ -270,7 +269,6 @@ struct RequestStats {
     patch: AtomicUsize,
 }
 
-#[async_trait]
 trait ResponseExt {
     async fn check(self) -> Result<()>;
     async fn check_json<T: DeserializeOwned>(self) -> Result<T>;
@@ -747,7 +745,7 @@ impl Api {
                         .await
                         .inspect_err(|e| {
                             self.circuit_breaker_429_tripped
-                                .check_err(&e, &self.circuit_breaker_429_tripped_callback);
+                                .check_err(e, &self.circuit_breaker_429_tripped_callback);
                         })?;
 
                     offset += chunk_len;
@@ -767,7 +765,7 @@ impl Api {
                     .await
                     .inspect_err(|e| {
                         self.circuit_breaker_429_tripped
-                            .check_err(&e, &self.circuit_breaker_429_tripped_callback);
+                            .check_err(e, &self.circuit_breaker_429_tripped_callback);
                     })?;
 
                 let request = FinalizeCacheEntryUploadRequest {
@@ -788,6 +786,10 @@ impl Api {
                             } else {
                                 Err(Error::ApiErrorNotOk)
                             }
+                        })
+                        .inspect_err(|e| {
+                            self.circuit_breaker_429_tripped
+                                .check_err(e, &self.circuit_breaker_429_tripped_callback);
                         })
                 })
                 .await
@@ -837,6 +839,9 @@ impl Api {
                     .check_json::<ArtifactCacheEntry>()
                     .await;
 
+                self.circuit_breaker_429_tripped
+                    .check_result(&res, &self.circuit_breaker_429_tripped_callback);
+
                 match res {
                     Ok(entry) => Ok(Some(entry.archive_location)),
                     Err(Error::DecodeError { status, .. }) if status == StatusCode::NO_CONTENT => {
@@ -863,6 +868,10 @@ impl Api {
                         } else {
                             Ok(None)
                         }
+                    })
+                    .inspect_err(|e| {
+                        self.circuit_breaker_429_tripped
+                            .check_err(e, &self.circuit_breaker_429_tripped_callback);
                     })
             })
             .await
@@ -924,6 +933,10 @@ impl Api {
                         } else {
                             Err(Error::ApiErrorNotOk)
                         }
+                    })
+                    .inspect_err(|e| {
+                        self.circuit_breaker_429_tripped
+                            .check_err(e, &self.circuit_breaker_429_tripped_callback);
                     })?;
 
                 Ok(FileAllocation::V2(SignedUrl {
@@ -946,7 +959,6 @@ impl Api {
     }
 }
 
-#[async_trait]
 impl ResponseExt for reqwest::Response {
     async fn check(self) -> Result<()> {
         let status = self.status();
