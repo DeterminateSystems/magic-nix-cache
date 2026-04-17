@@ -148,24 +148,10 @@ async fn worker(
     while let Some(req) = channel_rx.recv().await {
         match req {
             Request::Shutdown => {
-                tracing::info!("Worker received shutdown signal, draining queue...");
-                // Drain remaining items but don't retry on failure
-                while let Ok(req) = channel_rx.try_recv() {
-                    if let Request::Upload(path) = req {
-                        if done.insert(path.clone()) {
-                            // Best effort upload, no retries since we're shutting down
-                            let _ = upload_path(
-                                api,
-                                store.clone(),
-                                &path,
-                                metrics.clone(),
-                                narinfo_negative_cache.clone(),
-                                existing_keys.clone(),
-                            )
-                            .await;
-                        }
-                    }
-                }
+                tracing::info!("Worker received shutdown signal, dropping queued uploads");
+                // API shutdown has already been signaled, so retries are disabled
+                // and uploads would fail immediately. Just discard remaining items.
+                while let Ok(_) = channel_rx.try_recv() {}
                 break;
             }
             Request::Upload(path) => {
@@ -220,10 +206,10 @@ async fn upload_path(
     let path_info = store.query_path_info(path.clone()).await?;
 
     // Check if this path already exists in the cache
-    let narinfo_key_prefix = format!("{}.narinfo", path.to_hash().as_str());
+    let narinfo_path = format!("{}.narinfo", path.to_hash().as_str());
     {
         let keys = existing_keys.read().await;
-        if keys.iter().any(|k| k.starts_with(&narinfo_key_prefix)) {
+        if keys.iter().any(|k| k.starts_with(&narinfo_path)) {
             tracing::debug!(
                 "Skipping upload of '{}' - already exists in cache",
                 store.get_full_path(path).display()
@@ -255,8 +241,6 @@ async fn upload_path(
     );
 
     // Upload the narinfo.
-    let narinfo_path = format!("{}.narinfo", path.to_hash().as_str());
-
     let narinfo_allocation = api.allocate_file_with_random_suffix(&narinfo_path).await?;
 
     let narinfo = path_info_to_nar_info(store.clone(), &path_info, format!("nar/{nar_path}"))
@@ -275,8 +259,8 @@ async fn upload_path(
         .await
         .remove(&path.to_hash().to_string());
 
-    // Add to existing_keys to prevent re-upload in same run
-    // Note: We use the full key with suffix that was allocated
+    // Add base key (without random suffix) to prevent re-upload in same run.
+    // The pre-upload check uses starts_with, so the base key is sufficient.
     existing_keys.write().await.insert(narinfo_path.clone());
 
     tracing::info!(

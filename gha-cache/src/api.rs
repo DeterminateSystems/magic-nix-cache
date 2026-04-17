@@ -188,7 +188,7 @@ struct ListCachesResponse {
 #[derive(Debug, Deserialize)]
 struct CacheEntry {
     key: String,
-    // Other fields we don't need: id, ref, version, size_in_bytes, created_at, last_accessed_at
+    version: String,
 }
 
 /// A cache entry.
@@ -491,7 +491,7 @@ impl Api {
         let per_page = 100;
 
         loop {
-            // Use the version as a key prefix to only list caches for our version
+            // Fetch all caches; filter by version client-side after deserialization
             let url = format!(
                 "https://api.github.com/repos/{}/actions/caches?per_page={}&page={}",
                 github_repository, per_page, page
@@ -522,7 +522,9 @@ impl Api {
 
             let count = list_response.actions_caches.len();
             for cache in list_response.actions_caches {
-                all_keys.insert(cache.key);
+                if cache.version == self.version {
+                    all_keys.insert(cache.key);
+                }
             }
 
             if count < per_page {
