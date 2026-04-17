@@ -19,6 +19,7 @@ mod error;
 mod flakehub;
 mod gha;
 mod github;
+mod narinfo;
 mod pbh;
 mod telemetry;
 mod util;

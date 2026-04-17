@@ -1,10 +1,10 @@
 use std::{collections::HashSet, sync::Arc};
 
 use crate::error::{Error, Result};
+use crate::narinfo::{Compression, NarInfo};
 use crate::telemetry;
 use async_compression::tokio::bufread::ZstdEncoder;
 use attic::nix_store::{NixStore, StorePath, ValidPathInfo};
-use attic_server::narinfo::{Compression, NarInfo};
 use futures::stream::TryStreamExt;
 use gha_cache::{Api, Credentials};
 use tokio::sync::{
@@ -195,9 +195,8 @@ async fn upload_path(
 
     let narinfo_allocation = api.allocate_file_with_random_suffix(&narinfo_path).await?;
 
-    let narinfo = path_info_to_nar_info(store.clone(), &path_info, format!("nar/{nar_path}"))
-        .to_string()
-        .expect("failed to convert path into to nar info");
+    let narinfo =
+        path_info_to_nar_info(store.clone(), &path_info, format!("nar/{nar_path}")).to_string();
 
     tracing::debug!("Uploading '{}'", narinfo_path);
 

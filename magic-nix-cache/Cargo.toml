@@ -41,7 +41,6 @@ reqwest = { version = "0.12.5", default-features = false, features = [
 netrc-rs = "0.1.2"
 attic = { git = "https://github.com/DeterminateSystems/attic", branch = "fixups-for-magic-nix-cache" }
 attic-client = { git = "https://github.com/DeterminateSystems/attic", branch = "fixups-for-magic-nix-cache" }
-attic-server = { git = "https://github.com/DeterminateSystems/attic", branch = "fixups-for-magic-nix-cache" }
 indicatif = "0.17"
 anyhow = "1.0.71"
 tempfile = "3.9"
@@ -56,6 +55,9 @@ hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1"] }
 xdg = { version = "2.5.2" }
 color-eyre = { version = "0.6.3" }
 detsys-ids-client = "0.6"
+serde_with = "3.18.0"
+itoa = "1.0.18"
+ryu = "1.0.23"
 
 [dependencies.tokio]
 version = "1.44.2"
