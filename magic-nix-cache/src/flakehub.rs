@@ -19,7 +19,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::RwLock;
 use uuid::Uuid;
 
 const USER_AGENT: &str = "magic-nix-cache";
@@ -92,8 +91,7 @@ pub async fn init_cache(
             token: flakehub_password.clone(),
         }),
     };
-    let api_inner = ApiClient::from_server_config(server_config)?;
-    let api = Arc::new(RwLock::new(api_inner));
+    let api = ApiClient::from_server_config(server_config)?;
 
     // Periodically refresh JWT in GitHub Actions environment
     if environment.is_github_actions() {
@@ -101,13 +99,11 @@ pub async fn init_cache(
             super::FlakeHubAuthSource::Netrc(path) => {
                 let netrc_path_clone = path.to_path_buf();
                 let initial_github_jwt_clone = flakehub_password.clone();
-                let flakehub_cache_server_clone = flakehub_cache_server.to_string();
                 let api_clone = api.clone();
 
                 tokio::task::spawn(refresh_github_actions_jwt_worker(
                     netrc_path_clone,
                     initial_github_jwt_clone,
-                    flakehub_cache_server_clone,
                     api_clone,
                 ));
             }
@@ -179,7 +175,7 @@ pub async fn init_cache(
 
     let cache = unsafe { CacheName::new_unchecked(cache_name) };
 
-    let cache_config = api.read().await.get_cache_config(&cache).await?;
+    let cache_config = api.get_cache_config(&cache).await?;
 
     let push_config = PushConfig {
         num_workers: 5, // FIXME: use number of CPUs?
@@ -285,8 +281,7 @@ pub async fn enqueue_paths(state: &State, store_paths: Vec<StorePath>) -> Result
 async fn refresh_github_actions_jwt_worker(
     netrc_path: std::path::PathBuf,
     mut github_jwt: String,
-    flakehub_cache_server_clone: String,
-    api: Arc<RwLock<ApiClient>>,
+    api: ApiClient,
 ) -> Result<()> {
     // NOTE(cole-h): This is a workaround -- at the time of writing, GitHub Actions JWTs are only
     // valid for 5 minutes after being issued. FlakeHub uses these JWTs for authentication, which
@@ -325,18 +320,7 @@ async fn refresh_github_actions_jwt_worker(
             Ok(new_github_jwt) => {
                 github_jwt = new_github_jwt;
 
-                let server_config = ServerConfig {
-                    endpoint: flakehub_cache_server_clone.clone(),
-                    token: Some(attic_client::config::ServerTokenConfig::Raw {
-                        token: github_jwt.clone(),
-                    }),
-                };
-                let new_api = ApiClient::from_server_config(server_config)?;
-
-                {
-                    let mut api_client = api.write().await;
-                    *api_client = new_api;
-                }
+                api.set_token(&github_jwt)?;
 
                 tracing::debug!(
                     "Stored new token in netrc and API client, sleeping for {next_refresh:?}"
@@ -420,7 +404,7 @@ async fn refresh_determinate_token_worker(
     mut inode: u64,
     flakehub_api_server: Url,
     flakehub_cache_server: Url,
-    api_clone: Arc<RwLock<ApiClient>>,
+    api: ApiClient,
 ) {
     // NOTE(cole-h): This is a workaround -- at the time of writing, determinate-nixd handles the
     // GitHub Actions JWT refreshing for us, which means we don't know when this will happen. At the
@@ -447,7 +431,6 @@ async fn refresh_determinate_token_worker(
         }
 
         tracing::debug!("current inode is different, file changed");
-        inode = current_inode;
 
         let flakehub_password = match extract_info_from_netrc(
             &netrc_file,
@@ -464,24 +447,17 @@ async fn refresh_determinate_token_worker(
                 continue;
             }
         };
+        tracing::debug!("extracted auth info from netrc");
 
-        let server_config = ServerConfig {
-            endpoint: flakehub_cache_server.to_string(),
-            token: Some(attic_client::config::ServerTokenConfig::Raw {
-                token: flakehub_password,
-            }),
-        };
-
-        let new_api = ApiClient::from_server_config(server_config.clone());
-
-        let Ok(new_api) = new_api else {
-            tracing::error!(e = ?new_api, "Failed to construct new ApiClient");
-            continue;
-        };
-
-        {
-            let mut api_client = api_clone.write().await;
-            *api_client = new_api;
+        match api.set_token(&flakehub_password) {
+            Ok(_) => {
+                inode = current_inode;
+                tracing::debug!("successfully set new auth token, recorded new inode");
+            }
+            Err(e) => {
+                tracing::warn!(?e, "Failed to update auth token");
+                continue;
+            }
         }
 
         tracing::debug!("Stored new token in API client, sleeping for 30s");
