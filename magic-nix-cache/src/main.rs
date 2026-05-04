@@ -620,8 +620,11 @@ fn init_logging() -> Result<LogGuard> {
         .with_writer(std::io::stderr)
         .pretty();
 
-    let (guard, file_layer) = match std::env::var("RUNNER_DEBUG") {
-        Ok(val) if val == "1" => {
+    let (guard, file_layer) = match std::env::var("RUNNER_DEBUG")
+        .or_else(|_| std::env::var("ACTIONS_STEP_DEBUG"))
+        .or_else(|_| std::env::var("ACTIONS_RUNNER_DEBUG"))
+    {
+        Ok(val) if val == "1" || val == "true" => {
             let logfile = debug_logfile();
             let file = std::fs::OpenOptions::new()
                 .create(true)
