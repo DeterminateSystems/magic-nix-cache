@@ -6,6 +6,11 @@
 
     crane.url = "https://flakehub.com/f/ipetkov/crane/*";
 
+    fenix = {
+      url = "https://flakehub.com/f/nix-community/fenix/0.1";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     nix.url = "https://flakehub.com/f/DeterminateSystems/nix-src/=3.16.3";
   };
 
@@ -31,6 +36,26 @@
             inherit system;
           }
         );
+
+      fenixToolchain =
+        system:
+        with inputs.fenix.packages.${system};
+        combine (
+          [
+            stable.clippy
+            stable.rustc
+            stable.cargo
+            stable.rustfmt
+            stable.rust-src
+          ]
+          ++ inputs.nixpkgs.lib.optionals (system == "x86_64-linux") [
+            targets.x86_64-unknown-linux-musl.stable.rust-std
+          ]
+          ++ inputs.nixpkgs.lib.optionals (system == "aarch64-linux") [
+            targets.aarch64-unknown-linux-musl.stable.rust-std
+          ]
+        );
+
     in
     {
 
@@ -38,7 +63,8 @@
         { pkgs, system, ... }:
         let
           pkgs' = pkgs.pkgsStatic;
-          craneLib = inputs.crane.mkLib pkgs';
+          toolchain = fenixToolchain system;
+          craneLib = (inputs.crane.mkLib pkgs').overrideToolchain (_: toolchain);
           crateName = craneLib.crateNameFromCargoToml {
             cargoToml = ./magic-nix-cache/Cargo.toml;
           };
@@ -118,6 +144,7 @@
       devShells = forEachSupportedSystem (
         { system, pkgs }:
         let
+          toolchain = fenixToolchain system;
           pkgs' = if pkgs.stdenv.isDarwin then pkgs else pkgs.pkgsStatic;
           rustTargetSpec = pkgs'.stdenv.hostPlatform.rust.rustcTargetSpec;
           rustTargetSpecEnv = pkgs'.lib.toUpper (builtins.replaceStrings [ "-" ] [ "_" ] rustTargetSpec);
@@ -127,14 +154,20 @@
             env = {
               CARGO_BUILD_TARGET = rustTargetSpec;
               "CARGO_TARGET_${rustTargetSpecEnv}_LINKER" = "${pkgs'.stdenv.cc.targetPrefix}cc";
-              RUST_SRC_PATH = "${pkgs.rustPlatform.rustcSrc}/library";
             };
 
             inputsFrom = [ inputs.self.packages.${system}.default ];
 
+            depsBuildBuild = with pkgs; [
+              buildPackages.stdenv.cc # for linking crates in the build environment
+              lld
+            ];
+
             packages =
               with pkgs;
               [
+                toolchain
+
                 bashInteractive
 
                 cargo
