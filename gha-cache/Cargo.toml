@@ -7,7 +7,6 @@ include = ["proto"]
 
 [dependencies]
 bytes = { version = "1.4.0", default-features = false }
-derivative = { version = "2.2.0", default-features = false }
 futures = { version = "0.3.28", default-features = false, features = ["alloc"] }
 hex = "0.4.3"
 prost = "0.13.5"

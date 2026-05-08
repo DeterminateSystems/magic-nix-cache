@@ -180,6 +180,7 @@
                 cargo-edit
                 cargo-udeps
                 cargo-watch
+                cargo-audit
                 bacon
 
                 age
