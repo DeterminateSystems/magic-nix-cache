@@ -93,19 +93,27 @@ pub async fn init_cache(
     };
     let api = ApiClient::from_server_config(server_config)?;
 
-    // Periodically refresh JWT in GitHub Actions environment
-    if environment.is_github_actions() {
+    // Periodically refresh JWT when not in GitLab CI (which doesn't have a way for us to request a
+    // new token). If we're running in GitHub or Buildkite, and the auth source is determinate-nixd,
+    // we'll refresh the auth info whenever the netrc file is rewritten.
+    if !environment.is_gitlab_ci() {
         match auth_method {
             super::FlakeHubAuthSource::Netrc(path) => {
-                let netrc_path_clone = path.to_path_buf();
-                let initial_github_jwt_clone = flakehub_password.clone();
-                let api_clone = api.clone();
+                if environment.is_github_actions() {
+                    let netrc_path_clone = path.to_path_buf();
+                    let initial_github_jwt_clone = flakehub_password.clone();
+                    let api_clone = api.clone();
 
-                tokio::task::spawn(refresh_github_actions_jwt_worker(
-                    netrc_path_clone,
-                    initial_github_jwt_clone,
-                    api_clone,
-                ));
+                    tokio::task::spawn(refresh_github_actions_jwt_worker(
+                        netrc_path_clone,
+                        initial_github_jwt_clone,
+                        api_clone,
+                    ));
+                } else {
+                    tracing::warn!(
+                        "not running in GitHub Actions -- netrc auth source will not be refreshed!"
+                    );
+                }
             }
             crate::FlakeHubAuthSource::DeterminateNixd => {
                 let api_clone = api.clone();
@@ -127,6 +135,10 @@ pub async fn init_cache(
                 ));
             }
         }
+    } else {
+        tracing::warn!(
+            "running in GitLab CI -- auth cannot be refreshed, so don't take too long..."
+        );
     }
 
     // Get the cache UUID for this project.
