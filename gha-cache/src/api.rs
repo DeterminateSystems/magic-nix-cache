@@ -23,6 +23,7 @@ use reqwest::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use thiserror::Error;
 use tokio::{io::AsyncRead, sync::Semaphore};
 use twirp::client::Client as TwirpClient;
@@ -50,6 +51,11 @@ const CHUNK_SIZE: usize = 32 * 1024 * 1024;
 
 /// The number of chunks to upload at the same time.
 const MAX_CONCURRENCY: usize = 4;
+
+/// Configuration for retry behavior
+const MAX_RETRIES: u32 = 5;
+const BASE_RETRY_DELAY_MS: u64 = 1000;
+const MAX_RETRY_DELAY_MS: u64 = 60000;
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -80,6 +86,8 @@ pub enum Error {
     ApiError {
         status: StatusCode,
         info: ApiErrorInfo,
+        /// Retry-After header value in seconds, if present
+        retry_after: Option<u64>,
     },
 
     #[error("API error: 'not ok' response")]
@@ -93,6 +101,9 @@ pub enum Error {
 
     #[error("Too many collisions")]
     TooManyCollisions,
+
+    #[error("Shutting down, not retrying")]
+    ShuttingDown,
 }
 
 pub struct Api {
@@ -120,6 +131,9 @@ pub struct Api {
     circuit_breaker_429_tripped: Arc<AtomicBool>,
 
     circuit_breaker_429_tripped_callback: CircuitBreakerTrippedCallback,
+
+    /// Whether we're in shutdown mode (no retries, fail fast)
+    shutting_down: Arc<AtomicBool>,
 
     /// Backend request statistics.
     #[cfg(debug_assertions)]
@@ -161,6 +175,20 @@ pub enum ApiErrorInfo {
 pub struct StructuredApiError {
     /// A human-readable error message.
     message: String,
+}
+
+/// Response from the List Caches API
+#[derive(Debug, Deserialize)]
+struct ListCachesResponse {
+    total_count: u32,
+    actions_caches: Vec<CacheEntry>,
+}
+
+/// A cache entry from the List Caches API
+#[derive(Debug, Deserialize)]
+struct CacheEntry {
+    key: String,
+    version: String,
 }
 
 /// A cache entry.
@@ -323,6 +351,7 @@ impl Api {
             concurrency_limit: Arc::new(Semaphore::new(MAX_CONCURRENCY)),
             circuit_breaker_429_tripped: Arc::new(AtomicBool::from(false)),
             circuit_breaker_429_tripped_callback,
+            shutting_down: Arc::new(AtomicBool::new(false)),
             #[cfg(debug_assertions)]
             stats: Default::default(),
         })
@@ -332,10 +361,180 @@ impl Api {
         self.circuit_breaker_429_tripped.load(Ordering::Relaxed)
     }
 
+    /// Signal that we're shutting down - no more retries
+    pub fn signal_shutdown(&self) {
+        tracing::info!("API entering shutdown mode - no more retries");
+        self.shutting_down.store(true, Ordering::SeqCst);
+    }
+
+    /// Check if we're in shutdown mode
+    pub fn is_shutting_down(&self) -> bool {
+        self.shutting_down.load(Ordering::SeqCst)
+    }
+
     /// Mutates the cache version/namespace.
     pub fn mutate_version(&mut self, data: &[u8]) {
         self.version_hasher.update(data);
         self.version = hex::encode(self.version_hasher.clone().finalize());
+    }
+
+    /// Execute a request with retry logic, respecting shutdown state
+    async fn execute_with_retry<F, Fut, T>(&self, operation_name: &str, f: F) -> Result<T>
+    where
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = Result<T>>,
+    {
+        let mut attempt = 0;
+
+        loop {
+            match f().await {
+                Ok(result) => return Ok(result),
+                Err(e) => {
+                    // Check if it's a rate limit error
+                    if !is_rate_limit_error(&e) {
+                        // Not a rate limit error, don't retry
+                        return Err(e);
+                    }
+
+                    // If we're shutting down AND we got rate limited, stop immediately
+                    // This prevents hanging in CI when workflow-finish is called
+                    if self.is_shutting_down() {
+                        tracing::info!(
+                            "{}: shutting down and rate limited, stopping retries",
+                            operation_name
+                        );
+                        return Err(Error::ShuttingDown);
+                    }
+
+                    // Extract retry_after if available
+                    let retry_after = match &e {
+                        Error::ApiError { retry_after, .. } => *retry_after,
+                        _ => None,
+                    };
+
+                    attempt += 1;
+                    if attempt >= MAX_RETRIES {
+                        tracing::error!(
+                            "{}: max retries ({}) exceeded",
+                            operation_name,
+                            MAX_RETRIES
+                        );
+                        // Trip circuit breaker after max retries
+                        self.circuit_breaker_429_tripped
+                            .store(true, Ordering::Relaxed);
+                        (self.circuit_breaker_429_tripped_callback)();
+                        return Err(e);
+                    }
+
+                    // Calculate delay: use Retry-After if provided, otherwise exponential backoff
+                    let delay_ms = if let Some(secs) = retry_after {
+                        (secs * 1000).min(MAX_RETRY_DELAY_MS)
+                    } else {
+                        (BASE_RETRY_DELAY_MS * 2u64.pow(attempt - 1)).min(MAX_RETRY_DELAY_MS)
+                    };
+
+                    tracing::warn!(
+                        "{}: rate limited, attempt {}/{}, retrying in {}ms",
+                        operation_name,
+                        attempt,
+                        MAX_RETRIES,
+                        delay_ms
+                    );
+
+                    // Sleep with shutdown check - if shutdown happens during wait, abort
+                    let sleep_duration = std::time::Duration::from_millis(delay_ms);
+                    tokio::select! {
+                        _ = tokio::time::sleep(sleep_duration) => {
+                            // Sleep completed, retry the operation
+                        }
+                        _ = self.wait_for_shutdown() => {
+                            tracing::info!(
+                                "{}: shutdown signaled during retry wait, aborting",
+                                operation_name
+                            );
+                            return Err(Error::ShuttingDown);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Wait until shutdown is signaled
+    async fn wait_for_shutdown(&self) {
+        loop {
+            if self.is_shutting_down() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+
+    /// Lists all existing cache keys for this repository.
+    /// Returns a HashSet of cache keys that can be used to skip redundant uploads.
+    pub async fn list_existing_cache_keys(&self) -> Result<HashSet<String>> {
+        let (github_token, github_repository) = match (
+            &self.credentials.github_token,
+            &self.credentials.github_repository,
+        ) {
+            (Some(token), Some(repo)) => (token, repo),
+            _ => {
+                tracing::debug!(
+                    "GITHUB_TOKEN or GITHUB_REPOSITORY not set, skipping cache listing"
+                );
+                return Ok(HashSet::new());
+            }
+        };
+
+        let mut all_keys = HashSet::new();
+        let mut page = 1;
+        let per_page = 100;
+
+        loop {
+            // Fetch all caches; filter by version client-side after deserialization
+            let url = format!(
+                "https://api.github.com/repos/{}/actions/caches?per_page={}&page={}",
+                github_repository, per_page, page
+            );
+
+            #[cfg(debug_assertions)]
+            self.stats.get.fetch_add(1, Ordering::SeqCst);
+
+            let response = self
+                .client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", github_token))
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .header("Accept", "application/vnd.github+json")
+                .send()
+                .await?;
+
+            let status = response.status();
+            if !status.is_success() {
+                tracing::warn!(
+                    "Failed to list caches (status {}), continuing without cache listing",
+                    status
+                );
+                return Ok(all_keys);
+            }
+
+            let list_response: ListCachesResponse = response.json().await?;
+
+            let count = list_response.actions_caches.len();
+            for cache in list_response.actions_caches {
+                if cache.version == self.version {
+                    all_keys.insert(cache.key);
+                }
+            }
+
+            if count < per_page {
+                break; // Last page
+            }
+            page += 1;
+        }
+
+        tracing::info!("Found {} existing cache entries", all_keys.len());
+        Ok(all_keys)
     }
 
     // Public
@@ -481,19 +680,16 @@ impl Api {
                 #[cfg(debug_assertions)]
                 self.stats.post.fetch_add(1, Ordering::SeqCst);
 
-                if let Err(e) = self
-                    .client
-                    .post(self.construct_url(&format!("caches/{}", cache_id.0)))
-                    .json(&req)
-                    .send()
-                    .await?
-                    .check()
-                    .await
-                {
-                    self.circuit_breaker_429_tripped
-                        .check_err(&e, &self.circuit_breaker_429_tripped_callback);
-                    return Err(e);
-                }
+                self.execute_with_retry("commit_cache", || async {
+                    self.client
+                        .post(self.construct_url(&format!("caches/{}", cache_id.0)))
+                        .json(&req)
+                        .send()
+                        .await?
+                        .check()
+                        .await
+                })
+                .await?;
 
                 Ok(offset)
             }
@@ -576,26 +772,29 @@ impl Api {
 
                 let request = FinalizeCacheEntryUploadRequest {
                     metadata: None,
-                    key,
+                    key: key.clone(),
                     size_bytes: offset as i64,
                     version: self.version.clone(),
                 };
 
-                self.twirp_client
-                    .finalize_cache_entry_upload(request)
-                    .await
-                    .map_err(|e| e.into())
-                    .and_then(|response| {
-                        if response.ok {
-                            Ok(offset)
-                        } else {
-                            Err(Error::ApiErrorNotOk)
-                        }
-                    })
-                    .inspect_err(|e| {
-                        self.circuit_breaker_429_tripped
-                            .check_err(e, &self.circuit_breaker_429_tripped_callback);
-                    })
+                self.execute_with_retry("finalize_cache", || async {
+                    self.twirp_client
+                        .finalize_cache_entry_upload(request.clone())
+                        .await
+                        .map_err(|e| e.into())
+                        .and_then(|response| {
+                            if response.ok {
+                                Ok(offset)
+                            } else {
+                                Err(Error::ApiErrorNotOk)
+                            }
+                        })
+                        .inspect_err(|e| {
+                            self.circuit_breaker_429_tripped
+                                .check_err(e, &self.circuit_breaker_429_tripped_callback);
+                        })
+                })
+                .await
             }
         }
     }
@@ -625,50 +824,59 @@ impl Api {
             return Err(Error::CircuitBreakerTripped);
         }
 
+        let keys_vec: Vec<String> = keys.iter().map(|k| k.to_string()).collect();
+        let version = self.version.clone();
+
         #[cfg(debug_assertions)]
         self.stats.get.fetch_add(1, Ordering::SeqCst);
 
         if self.credentials.service_v2.is_empty() {
-            let res = self
-                .client
-                .get(self.construct_url("cache"))
-                .query(&[("version", &self.version), ("keys", &keys.join(","))])
-                .send()
-                .await?
-                .check_json::<ArtifactCacheEntry>()
-                .await;
+            self.execute_with_retry("get_cache_entry", || async {
+                let res = self
+                    .client
+                    .get(self.construct_url("cache"))
+                    .query(&[("version", &version), ("keys", &keys_vec.join(","))])
+                    .send()
+                    .await?
+                    .check_json::<ArtifactCacheEntry>()
+                    .await;
 
-            self.circuit_breaker_429_tripped
-                .check_result(&res, &self.circuit_breaker_429_tripped_callback);
+                self.circuit_breaker_429_tripped
+                    .check_result(&res, &self.circuit_breaker_429_tripped_callback);
 
-            match res {
-                Ok(entry) => Ok(Some(entry.archive_location)),
-                Err(Error::DecodeError { status, .. }) if status == StatusCode::NO_CONTENT => {
-                    Ok(None)
-                }
-                Err(e) => Err(e),
-            }
-        } else {
-            self.twirp_client
-                .get_cache_entry_download_url(GetCacheEntryDownloadUrlRequest {
-                    version: self.version.clone(),
-                    key: keys[0].to_string(),
-                    restore_keys: keys.iter().map(|k| k.to_string()).collect(),
-                    metadata: None,
-                })
-                .await
-                .map_err(|e| e.into())
-                .map(|entry| {
-                    if entry.ok {
-                        Some(entry.signed_download_url)
-                    } else {
-                        None
+                match res {
+                    Ok(entry) => Ok(Some(entry.archive_location)),
+                    Err(Error::DecodeError { status, .. }) if status == StatusCode::NO_CONTENT => {
+                        Ok(None)
                     }
-                })
-                .inspect_err(|e| {
-                    self.circuit_breaker_429_tripped
-                        .check_err(e, &self.circuit_breaker_429_tripped_callback);
-                })
+                    Err(e) => Err(e),
+                }
+            })
+            .await
+        } else {
+            self.execute_with_retry("get_cache_entry", || async {
+                self.twirp_client
+                    .get_cache_entry_download_url(GetCacheEntryDownloadUrlRequest {
+                        version: version.clone(),
+                        key: keys_vec[0].clone(),
+                        restore_keys: keys_vec.clone(),
+                        metadata: None,
+                    })
+                    .await
+                    .map_err(|e| e.into())
+                    .and_then(|entry| {
+                        if entry.ok {
+                            Ok(Some(entry.signed_download_url))
+                        } else {
+                            Ok(None)
+                        }
+                    })
+                    .inspect_err(|e| {
+                        self.circuit_breaker_429_tripped
+                            .check_err(e, &self.circuit_breaker_429_tripped_callback);
+                    })
+            })
+            .await
         }
     }
 
@@ -682,57 +890,63 @@ impl Api {
             return Err(Error::CircuitBreakerTripped);
         }
 
+        let key = key.to_string();
+        let version = self.version.clone();
+
         if self.credentials.service_v2.is_empty() {
-            let req = ReserveCacheRequest {
-                key,
-                version: &self.version,
-                cache_size,
-            };
+            self.execute_with_retry("reserve_cache", || async {
+                let req = ReserveCacheRequest {
+                    key: &key,
+                    version: &version,
+                    cache_size,
+                };
 
-            #[cfg(debug_assertions)]
-            self.stats.post.fetch_add(1, Ordering::SeqCst);
+                #[cfg(debug_assertions)]
+                self.stats.post.fetch_add(1, Ordering::SeqCst);
 
-            let res = self
-                .client
-                .post(self.construct_url("caches"))
-                .json(&req)
-                .send()
-                .await?
-                .check_json::<ReserveCacheResponse>()
-                .await;
+                let res = self
+                    .client
+                    .post(self.construct_url("caches"))
+                    .json(&req)
+                    .send()
+                    .await?
+                    .check_json::<ReserveCacheResponse>()
+                    .await?;
 
-            self.circuit_breaker_429_tripped
-                .check_result(&res, &self.circuit_breaker_429_tripped_callback);
-
-            Ok(FileAllocation::V1(res?.cache_id))
+                Ok(FileAllocation::V1(res.cache_id))
+            })
+            .await
         } else {
-            let req = CreateCacheEntryRequest {
-                metadata: None,
-                key: key.to_string(),
-                version: self.version.clone(),
-            };
+            self.execute_with_retry("reserve_cache", || async {
+                let req = CreateCacheEntryRequest {
+                    metadata: None,
+                    key: key.clone(),
+                    version: version.clone(),
+                };
 
-            let res = self
-                .twirp_client
-                .create_cache_entry(req)
-                .await
-                .map_err(|e| e.into())
-                .and_then(|response| {
-                    if response.ok {
-                        Ok(response)
-                    } else {
-                        Err(Error::ApiErrorNotOk)
-                    }
-                })
-                .inspect_err(|e| {
-                    self.circuit_breaker_429_tripped
-                        .check_err(e, &self.circuit_breaker_429_tripped_callback);
-                })?;
+                let res = self
+                    .twirp_client
+                    .create_cache_entry(req)
+                    .await
+                    .map_err(|e| e.into())
+                    .and_then(|response| {
+                        if response.ok {
+                            Ok(response)
+                        } else {
+                            Err(Error::ApiErrorNotOk)
+                        }
+                    })
+                    .inspect_err(|e| {
+                        self.circuit_breaker_429_tripped
+                            .check_err(e, &self.circuit_breaker_429_tripped_callback);
+                    })?;
 
-            Ok(FileAllocation::V2(SignedUrl {
-                signed_url: res.signed_upload_url,
-                key: key.to_string(),
-            }))
+                Ok(FileAllocation::V2(SignedUrl {
+                    signed_url: res.signed_upload_url,
+                    key: key.clone(),
+                }))
+            })
+            .await
         }
     }
 
@@ -781,6 +995,14 @@ impl ResponseExt for reqwest::Response {
 
 async fn handle_error(res: reqwest::Response) -> Error {
     let status = res.status();
+
+    // Parse Retry-After header
+    let retry_after = res
+        .headers()
+        .get("Retry-After")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok());
+
     let bytes = match res.bytes().await {
         Ok(bytes) => {
             let bom = Bom::from(bytes.as_ref());
@@ -799,7 +1021,30 @@ async fn handle_error(res: reqwest::Response) -> Error {
         }
     };
 
-    Error::ApiError { status, info }
+    Error::ApiError {
+        status,
+        info,
+        retry_after,
+    }
+}
+
+/// Check if an error is a rate limit error that should trigger retry/circuit breaker
+fn is_rate_limit_error(e: &Error) -> bool {
+    matches!(
+        e,
+        Error::ApiError {
+            status: reqwest::StatusCode::TOO_MANY_REQUESTS,
+            ..
+        } | Error::TwirpError(ClientError::TwirpError(TwirpErrorResponse {
+            code: TwirpErrorCode::ResourceExhausted,
+            ..
+        })) | Error::TwirpError(ClientError::HttpError {
+            // The cache backend seems to give out this error for overload:
+            // Twirp error: http error, status code: 502 Bad Gateway, msg:unknown error
+            status: StatusCode::BAD_GATEWAY,
+            ..
+        })
+    )
 }
 
 trait AtomicCircuitBreaker {
@@ -823,27 +1068,9 @@ impl AtomicCircuitBreaker for AtomicBool {
     }
 
     fn check_err(&self, e: &Error, callback: &CircuitBreakerTrippedCallback) {
-        match e {
-            Error::ApiError {
-                status: reqwest::StatusCode::TOO_MANY_REQUESTS,
-                ..
-            }
-            | Error::TwirpError(ClientError::TwirpError(TwirpErrorResponse {
-                code: TwirpErrorCode::ResourceExhausted,
-                ..
-            }))
-            | Error::TwirpError(ClientError::HttpError {
-                // The cache backend seems to give out this error for overload:
-                // Twirp error: http error, status code: 502 Bad Gateway, msg:unknown error
-                status: StatusCode::BAD_GATEWAY,
-                ..
-            }) => {
-                // meat is below
-            }
-            otherwise => {
-                tracing::error!(%otherwise, "Checked error for resource exhaustion, but it appears to be a different cause");
-                return;
-            }
+        if !is_rate_limit_error(e) {
+            tracing::error!(%e, "Checked error for resource exhaustion, but it appears to be a different cause");
+            return;
         }
 
         tracing::info!(%e, "Disabling GitHub Actions Cache due to rate limiting");
