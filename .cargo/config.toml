@@ -1,9 +1,16 @@
 [target.aarch64-unknown-linux-musl]
 rustflags = [
-  "-Clink-arg=-fuse-ld=lld",
-  "-Crelocation-model=static",
   "-Clink-arg=-lgcc",
+  "-Crelocation-model=static",
+  "-Clink-arg=-fuse-ld=lld",
+  "-Clink-arg=-Wl,--wrap=__cxa_throw",
+  "-Clink-arg=-Wl,-u,__wrap___cxa_throw",
 ]
 
 [target.x86_64-unknown-linux-musl]
-rustflags = ["-Clink-arg=-fuse-ld=lld", "-Crelocation-model=static"]
+rustflags = [
+  "-Crelocation-model=static",
+  "-Clink-arg=-fuse-ld=lld",
+  "-Clink-arg=-Wl,--wrap=__cxa_throw",
+  "-Clink-arg=-Wl,-u,__wrap___cxa_throw",
+]

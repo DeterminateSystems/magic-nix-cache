@@ -39,8 +39,8 @@ reqwest = { version = "0.12.5", default-features = false, features = [
   "json",
 ] }
 netrc-rs = "0.1.2"
-attic = { git = "https://github.com/DeterminateSystems/attic", branch = "fixups-for-magic-nix-cache" }
-attic-client = { git = "https://github.com/DeterminateSystems/attic", branch = "fixups-for-magic-nix-cache" }
+attic = { git = "https://github.com/DeterminateSystems/attic", branch = "wip" }
+attic-client = { git = "https://github.com/DeterminateSystems/attic", branch = "wip" }
 indicatif = "0.17"
 anyhow = "1.0.71"
 tempfile = "3.9"
