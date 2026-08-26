@@ -1,0 +1,20 @@
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+    labels:
+      - dependencies
+      - github-actions
+    ignore:
+      - dependency-name: DeterminateSystems/*
+
