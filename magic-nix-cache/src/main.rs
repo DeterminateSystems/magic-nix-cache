@@ -127,6 +127,10 @@ struct Args {
     /// Whether or not to diff the store before and after Magic Nix Cache runs
     #[arg(long, default_value_t = false)]
     diff_store: bool,
+
+    /// Force debug logging on.
+    #[arg(long, default_value_t = false)]
+    debug: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, clap::ValueEnum)]
@@ -248,7 +252,7 @@ impl FlakeHubAuthSource {
 }
 
 async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<()> {
-    let guard = init_logging()?;
+    let guard = init_logging(&args)?;
     let _tracing_guard = guard.appender_guard;
 
     let environment = env::Environment::determine();
@@ -597,7 +601,7 @@ pub struct LogGuard {
     logfile: Option<PathBuf>,
 }
 
-fn init_logging() -> Result<LogGuard> {
+fn init_logging(args: &Args) -> Result<LogGuard> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         #[cfg(debug_assertions)]
         return EnvFilter::new("info")
@@ -620,37 +624,40 @@ fn init_logging() -> Result<LogGuard> {
         .with_writer(std::io::stderr)
         .pretty();
 
-    let (guard, file_layer) = match std::env::var("RUNNER_DEBUG")
-        .or_else(|_| std::env::var("ACTIONS_STEP_DEBUG"))
-        .or_else(|_| std::env::var("ACTIONS_RUNNER_DEBUG"))
-    {
-        Ok(val) if val == "1" || val == "true" => {
-            let logfile = debug_logfile();
-            let file = std::fs::OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(&logfile)?;
-            let (nonblocking, guard) = tracing_appender::non_blocking(file);
-            let file_layer = tracing_subscriber::fmt::layer()
-                .with_writer(nonblocking)
-                .pretty();
+    let enable_debug = args.debug
+        || std::env::var("RUNNER_DEBUG")
+            .or_else(|_| std::env::var("ACTIONS_STEP_DEBUG"))
+            .or_else(|_| std::env::var("ACTIONS_RUNNER_DEBUG"))
+            .ok()
+            .is_some_and(|val| val == "1" || val == "true");
 
-            (
-                LogGuard {
-                    appender_guard: Some(guard),
-                    logfile: Some(logfile),
-                },
-                Some(file_layer),
-            )
-        }
-        _ => (
+    let (guard, file_layer) = if enable_debug {
+        let logfile = debug_logfile();
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&logfile)?;
+        let (nonblocking, guard) = tracing_appender::non_blocking(file);
+        let file_layer = tracing_subscriber::fmt::layer()
+            .with_writer(nonblocking)
+            .pretty();
+
+        (
+            LogGuard {
+                appender_guard: Some(guard),
+                logfile: Some(logfile),
+            },
+            Some(file_layer),
+        )
+    } else {
+        (
             LogGuard {
                 appender_guard: None,
                 logfile: None,
             },
             None,
-        ),
+        )
     };
 
     tracing_subscriber::registry()
