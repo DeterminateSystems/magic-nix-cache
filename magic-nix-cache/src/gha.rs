@@ -1,3 +1,9 @@
+mod cached;
+mod upstream;
+
+use cached::CachedPaths;
+use upstream::UpstreamCache;
+
 use std::{collections::HashSet, sync::Arc};
 
 use crate::error::{Error, Result};
@@ -36,7 +42,16 @@ impl GhaCache {
         store: Arc<NixStore>,
         metrics: Arc<telemetry::TelemetryReport>,
         narinfo_negative_cache: Arc<RwLock<HashSet<String>>>,
+        upstream: Option<String>,
     ) -> Result<GhaCache> {
+        let upstream = UpstreamCache::new(upstream).map_err(|error| {
+            Error::Internal(format!("Cannot initialize upstream cache client: {error}"))
+        })?;
+        let cached = CachedPaths::new().map_err(|error| {
+            Error::Internal(format!(
+                "Cannot initialize GitHub cache lookup client: {error}"
+            ))
+        })?;
         let cb_metrics = metrics.clone();
         let mut api = Api::new(
             credentials,
@@ -64,6 +79,8 @@ impl GhaCache {
                 channel_rx,
                 metrics,
                 narinfo_negative_cache.clone(),
+                upstream,
+                cached,
             )
             .await
         });
@@ -120,6 +137,8 @@ async fn worker(
     mut channel_rx: UnboundedReceiver<Request>,
     metrics: Arc<telemetry::TelemetryReport>,
     narinfo_negative_cache: Arc<RwLock<HashSet<String>>>,
+    mut upstream: UpstreamCache,
+    mut cached: CachedPaths,
 ) -> Result<()> {
     let mut done = HashSet::new();
 
@@ -144,6 +163,8 @@ async fn worker(
                     &path,
                     metrics.clone(),
                     narinfo_negative_cache.clone(),
+                    &mut upstream,
+                    &mut cached,
                 )
                 .await
                 {
@@ -166,8 +187,31 @@ async fn upload_path(
     path: &StorePath,
     metrics: Arc<telemetry::TelemetryReport>,
     narinfo_negative_cache: Arc<RwLock<HashSet<String>>>,
+    upstream: &mut UpstreamCache,
+    cached: &mut CachedPaths,
 ) -> Result<()> {
     let path_info = store.query_path_info(path.clone()).await?;
+    let full_path = store.get_full_path(path);
+    if upstream.contains(&full_path, &path_info.nar_hash).await {
+        tracing::debug!(path = %full_path.display(), "Path already available in upstream cache; skipping upload");
+        return Ok(());
+    }
+
+    let narinfo_path = format!("{}.narinfo", path.to_hash().as_str());
+    if cached
+        .contains(api, &narinfo_path, &full_path, &path_info.nar_hash)
+        .await
+    {
+        narinfo_negative_cache
+            .write()
+            .await
+            .remove(&path.to_hash().to_string());
+        tracing::debug!(path = %full_path.display(), "Path already available in GitHub cache; skipping upload");
+        return Ok(());
+    }
+    if api.circuit_breaker_tripped() {
+        return Ok(());
+    }
 
     // Upload the NAR.
     let nar_path = format!("{}.nar.zstd", path_info.nar_hash.to_base32());
@@ -191,7 +235,6 @@ async fn upload_path(
     );
 
     // Upload the narinfo.
-    let narinfo_path = format!("{}.narinfo", path.to_hash().as_str());
 
     let narinfo_allocation = api.allocate_file_with_random_suffix(&narinfo_path).await?;
 
