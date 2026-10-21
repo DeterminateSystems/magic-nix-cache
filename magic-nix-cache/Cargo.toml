@@ -58,6 +58,7 @@ detsys-ids-client = "0.7"
 serde_with = "3.18.0"
 itoa = "1.0.18"
 ryu = "1.0.23"
+eventsource-stream = "0.2"
 
 [dependencies.tokio]
 version = "1.44.2"

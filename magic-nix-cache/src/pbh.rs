@@ -8,6 +8,7 @@ use anyhow::anyhow;
 use anyhow::Context as _;
 use anyhow::Result;
 use clap::Parser;
+use eventsource_stream::Eventsource as _;
 use futures::StreamExt as _;
 use http_body_util::BodyExt as _;
 use hyper_util::rt::TokioExecutor;
@@ -37,11 +38,24 @@ pub async fn subscribe_uds_post_build_hook(
     Ok(())
 }
 
+/// How long to wait before reconnecting to determinate-nixd after a failure.
+const RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// The envelope every determinate-nixd event carries.
+///
+/// Only `v` and `c` are read here, so that events of other kinds can be
+/// skipped without trying to decode them as a built-path event.
+#[derive(Debug, serde::Deserialize)]
+struct EventEnvelope {
+    v: String,
+    c: String,
+}
+
 async fn handle_events(state: State, dnixd_uds_socket_path: &PathBuf) -> ! {
     loop {
         let Ok(socket_conn) = UnixStream::connect(dnixd_uds_socket_path).await else {
             tracing::error!("built-paths: failed to connect to determinate-nixd's socket");
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            tokio::time::sleep(RECONNECT_DELAY).await;
             continue;
         };
         let stream = TokioIo::new(socket_conn);
@@ -51,6 +65,7 @@ async fn handle_events(state: State, dnixd_uds_socket_path: &PathBuf) -> ! {
 
         let Ok((mut sender, conn)) = sender_conn else {
             tracing::error!("built-paths: failed to http2 handshake");
+            tokio::time::sleep(RECONNECT_DELAY).await;
             continue;
         };
 
@@ -67,65 +82,114 @@ async fn handle_events(state: State, dnixd_uds_socket_path: &PathBuf) -> ! {
             .body(axum::body::Body::empty());
         let Ok(request) = request else {
             tracing::error!("built-paths: failed to create request to subscribe");
+            tokio::time::sleep(RECONNECT_DELAY).await;
             continue;
         };
 
-        let response = sender.send_request(request).await;
-        let response = match response {
+        let response = match sender.send_request(request).await {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!("built-paths: failed to send subscription request: {:?}", e);
+                tokio::time::sleep(RECONNECT_DELAY).await;
                 continue;
             }
         };
-        let mut data = response.into_data_stream();
 
-        while let Some(event_str) = data.next().await {
-            let event_str = match event_str {
-                Ok(event) => event,
-                Err(e) => {
+        if !response.status().is_success() {
+            tracing::error!(
+                status = %response.status(),
+                "built-paths: determinate-nixd rejected the subscription"
+            );
+            tokio::time::sleep(RECONNECT_DELAY).await;
+            continue;
+        }
+
+        // The body arrives as a sequence of HTTP/2 data frames. One SSE event
+        // can span many frames (a built-path event carries the derivation's
+        // provenance, which can be large), so the frames are parsed as a
+        // continuous SSE stream rather than one event per frame.
+        let mut events = response.into_body().into_data_stream().eventsource();
+
+        loop {
+            match events.next().await {
+                Some(Ok(event)) => handle_event(&state, &event.data).await,
+                Some(Err(e)) => {
                     tracing::error!("built-paths: error while receiving: {}", e);
                     break;
                 }
-            };
-
-            let Some(event_str) = event_str.strip_prefix("data: ".as_bytes()) else {
-                tracing::debug!("built-paths subscription: ignoring non-data frame");
-                continue;
-            };
-            let Ok(event): core::result::Result<BuiltPathResponseEventV1, _> =
-                serde_json::from_slice(event_str)
-            else {
-                tracing::error!(event_str = %String::from_utf8_lossy(event_str), "failed to decode built-path response as BuiltPathResponseEventV1");
-                continue;
-            };
-
-            let maybe_store_paths = event
-                .outputs
-                .iter()
-                .map(|path| {
-                    state
-                        .store
-                        .follow_store_path(path)
-                        .map_err(|_| anyhow!("failed to collect store paths"))
-                })
-                .collect::<Result<Vec<_>>>();
-
-            let Ok(store_paths) = maybe_store_paths else {
-                tracing::error!("built-paths: encountered an error aggregating build store paths");
-                continue;
-            };
-
-            tracing::debug!("about to enqueue paths: {:?}", store_paths);
-            if let Err(e) = crate::api::enqueue_paths(&state, store_paths).await {
-                tracing::error!(
-                    "built-paths: failed to enqueue paths for drv ({}): {}",
-                    event.drv.display(),
-                    e
-                );
-                continue;
+                None => {
+                    tracing::warn!("built-paths: event stream ended, reconnecting");
+                    break;
+                }
             }
         }
+
+        tokio::time::sleep(RECONNECT_DELAY).await;
+    }
+}
+
+/// Handle the data of one SSE event from determinate-nixd.
+async fn handle_event(state: &State, data: &str) {
+    let envelope: EventEnvelope = match serde_json::from_str(data) {
+        Ok(envelope) => envelope,
+        Err(e) => {
+            tracing::error!(
+                data = %data,
+                error = %e,
+                "built-paths: event is not a determinate-nixd event envelope"
+            );
+            return;
+        }
+    };
+
+    if envelope.v != "1" {
+        tracing::debug!(version = %envelope.v, "built-paths: ignoring event with unknown version");
+        return;
+    }
+
+    if envelope.c != "BuiltPathResponseEventV1" {
+        tracing::debug!(kind = %envelope.c, "built-paths: ignoring event of another kind");
+        return;
+    }
+
+    let event: BuiltPathResponseEventV1 = match serde_json::from_str(data) {
+        Ok(event) => event,
+        Err(e) => {
+            tracing::error!(
+                data = %data,
+                error = %e,
+                "built-paths: failed to decode BuiltPathResponseEventV1"
+            );
+            return;
+        }
+    };
+
+    let maybe_store_paths = event
+        .outputs
+        .iter()
+        .map(|path| {
+            state
+                .store
+                .follow_store_path(path)
+                .map_err(|_| anyhow!("failed to collect store paths"))
+        })
+        .collect::<Result<Vec<_>>>();
+
+    let Ok(store_paths) = maybe_store_paths else {
+        tracing::error!(
+            drv = %event.drv.display(),
+            "built-paths: encountered an error aggregating build store paths"
+        );
+        return;
+    };
+
+    tracing::debug!(drv = %event.drv.display(), "about to enqueue paths: {:?}", store_paths);
+    if let Err(e) = crate::api::enqueue_paths(state, store_paths).await {
+        tracing::error!(
+            "built-paths: failed to enqueue paths for drv ({}): {}",
+            event.drv.display(),
+            e
+        );
     }
 }
 
@@ -245,4 +309,40 @@ pub async fn handle_legacy_post_build_hook(out_paths: &str) -> Result<()> {
     };
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression test: a single large SSE event delivered in many small
+    /// frames must come out of the SSE parser as one event.
+    #[tokio::test]
+    async fn large_event_split_across_frames_is_reassembled() {
+        let payload = format!(
+            "{{\"v\":\"1\",\"c\":\"BuiltPathResponseEventV1\",\"drv\":\"/nix/store/x-example.drv\",\"outputs\":[\"/nix/store/y-example\"],\"provenance\":{{\"meta\":\"{}\"}}}}",
+            "v".repeat(200 * 1024)
+        );
+        let wire = format!(": keep-alive\n\ndata: {payload}\n\n");
+
+        // Deliver the bytes in 16 KiB frames, the HTTP/2 default frame size.
+        let frames: Vec<std::io::Result<hyper::body::Bytes>> = wire
+            .as_bytes()
+            .chunks(16 * 1024)
+            .map(|chunk| Ok(hyper::body::Bytes::copy_from_slice(chunk)))
+            .collect();
+        assert!(frames.len() > 10, "the test payload must span many frames");
+
+        let events: Vec<_> = futures::stream::iter(frames)
+            .eventsource()
+            .map(|event| event.expect("the stream is valid SSE"))
+            .collect()
+            .await;
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, payload);
+
+        let decoded: BuiltPathResponseEventV1 = serde_json::from_str(&events[0].data).unwrap();
+        assert_eq!(decoded.outputs.len(), 1);
+    }
 }
