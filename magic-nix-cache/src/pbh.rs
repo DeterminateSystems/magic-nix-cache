@@ -37,6 +37,13 @@ pub async fn subscribe_uds_post_build_hook(
     Ok(())
 }
 
+/// The envelope every determinate-nixd event carries.
+#[derive(Debug, serde::Deserialize)]
+struct EventEnvelope {
+    v: String,
+    c: String,
+}
+
 const RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
 
 async fn handle_events(state: State, dnixd_uds_socket_path: &PathBuf) -> ! {
@@ -107,41 +114,75 @@ async fn handle_events(state: State, dnixd_uds_socket_path: &PathBuf) -> ! {
                 tracing::debug!("built-paths subscription: ignoring non-data frame");
                 continue;
             };
-            let Ok(event): core::result::Result<BuiltPathResponseEventV1, _> =
-                serde_json::from_slice(event_str)
-            else {
-                tracing::error!(event_str = %String::from_utf8_lossy(event_str), "failed to decode built-path response as BuiltPathResponseEventV1");
-                continue;
-            };
-
-            let maybe_store_paths = event
-                .outputs
-                .iter()
-                .map(|path| {
-                    state
-                        .store
-                        .follow_store_path(path)
-                        .map_err(|_| anyhow!("failed to collect store paths"))
-                })
-                .collect::<Result<Vec<_>>>();
-
-            let Ok(store_paths) = maybe_store_paths else {
-                tracing::error!("built-paths: encountered an error aggregating build store paths");
-                continue;
-            };
-
-            tracing::debug!("about to enqueue paths: {:?}", store_paths);
-            if let Err(e) = crate::api::enqueue_paths(&state, store_paths).await {
-                tracing::error!(
-                    "built-paths: failed to enqueue paths for drv ({}): {}",
-                    event.drv.display(),
-                    e
-                );
-                continue;
-            }
+            handle_event(&state, &String::from_utf8_lossy(event_str)).await;
         }
 
         tokio::time::sleep(RECONNECT_DELAY).await;
+    }
+}
+
+/// Handle the data of one event from determinate-nixd.
+async fn handle_event(state: &State, data: &str) {
+    let envelope: EventEnvelope = match serde_json::from_str(data) {
+        Ok(envelope) => envelope,
+        Err(e) => {
+            tracing::error!(
+                data = %data,
+                error = %e,
+                "built-paths: event is not a determinate-nixd event envelope"
+            );
+            return;
+        }
+    };
+
+    if envelope.v != "1" {
+        tracing::debug!(version = %envelope.v, "built-paths: ignoring event with unknown version");
+        return;
+    }
+
+    if envelope.c != "BuiltPathResponseEventV1" {
+        tracing::debug!(kind = %envelope.c, "built-paths: ignoring event of another kind");
+        return;
+    }
+
+    let event: BuiltPathResponseEventV1 = match serde_json::from_str(data) {
+        Ok(event) => event,
+        Err(e) => {
+            tracing::error!(
+                data = %data,
+                error = %e,
+                "built-paths: failed to decode BuiltPathResponseEventV1"
+            );
+            return;
+        }
+    };
+
+    let maybe_store_paths = event
+        .outputs
+        .iter()
+        .map(|path| {
+            state
+                .store
+                .follow_store_path(path)
+                .map_err(|_| anyhow!("failed to collect store paths"))
+        })
+        .collect::<Result<Vec<_>>>();
+
+    let Ok(store_paths) = maybe_store_paths else {
+        tracing::error!(
+            drv = %event.drv.display(),
+            "built-paths: encountered an error aggregating build store paths"
+        );
+        return;
+    };
+
+    tracing::debug!(drv = %event.drv.display(), "about to enqueue paths: {:?}", store_paths);
+    if let Err(e) = crate::api::enqueue_paths(state, store_paths).await {
+        tracing::error!(
+            "built-paths: failed to enqueue paths for drv ({}): {}",
+            event.drv.display(),
+            e
+        );
     }
 }
 
