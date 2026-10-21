@@ -303,3 +303,37 @@ pub async fn handle_legacy_post_build_hook(out_paths: &str) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn large_event_split_across_frames_is_reassembled() {
+        let payload = format!(
+            "{{\"v\":\"1\",\"c\":\"BuiltPathResponseEventV1\",\"drv\":\"/nix/store/x-example.drv\",\"outputs\":[\"/nix/store/y-example\"],\"provenance\":{{\"meta\":\"{}\"}}}}",
+            "v".repeat(200 * 1024)
+        );
+        let wire = format!(": keep-alive\n\ndata: {payload}\n\n");
+
+        // 16 KiB is the HTTP/2 default frame size.
+        let frames: Vec<std::io::Result<hyper::body::Bytes>> = wire
+            .as_bytes()
+            .chunks(16 * 1024)
+            .map(|chunk| Ok(hyper::body::Bytes::copy_from_slice(chunk)))
+            .collect();
+        assert!(frames.len() > 10, "the test payload must span many frames");
+
+        let events: Vec<_> = futures::stream::iter(frames)
+            .eventsource()
+            .map(|event| event.expect("the stream is valid SSE"))
+            .collect()
+            .await;
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, payload);
+
+        let decoded: BuiltPathResponseEventV1 = serde_json::from_str(&events[0].data).unwrap();
+        assert_eq!(decoded.outputs.len(), 1);
+    }
+}
