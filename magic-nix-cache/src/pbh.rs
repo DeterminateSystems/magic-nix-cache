@@ -83,6 +83,15 @@ async fn handle_events(state: State, dnixd_uds_socket_path: &PathBuf) -> ! {
                 continue;
             }
         };
+        if !response.status().is_success() {
+            tracing::error!(
+                status = %response.status(),
+                "built-paths: determinate-nixd rejected the subscription"
+            );
+            tokio::time::sleep(RECONNECT_DELAY).await;
+            continue;
+        }
+
         let mut data = response.into_data_stream();
 
         while let Some(event_str) = data.next().await {
