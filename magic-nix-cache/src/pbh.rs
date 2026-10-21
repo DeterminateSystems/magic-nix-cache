@@ -37,11 +37,13 @@ pub async fn subscribe_uds_post_build_hook(
     Ok(())
 }
 
+const RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
+
 async fn handle_events(state: State, dnixd_uds_socket_path: &PathBuf) -> ! {
     loop {
         let Ok(socket_conn) = UnixStream::connect(dnixd_uds_socket_path).await else {
             tracing::error!("built-paths: failed to connect to determinate-nixd's socket");
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            tokio::time::sleep(RECONNECT_DELAY).await;
             continue;
         };
         let stream = TokioIo::new(socket_conn);
@@ -51,6 +53,7 @@ async fn handle_events(state: State, dnixd_uds_socket_path: &PathBuf) -> ! {
 
         let Ok((mut sender, conn)) = sender_conn else {
             tracing::error!("built-paths: failed to http2 handshake");
+            tokio::time::sleep(RECONNECT_DELAY).await;
             continue;
         };
 
@@ -67,6 +70,7 @@ async fn handle_events(state: State, dnixd_uds_socket_path: &PathBuf) -> ! {
             .body(axum::body::Body::empty());
         let Ok(request) = request else {
             tracing::error!("built-paths: failed to create request to subscribe");
+            tokio::time::sleep(RECONNECT_DELAY).await;
             continue;
         };
 
@@ -75,6 +79,7 @@ async fn handle_events(state: State, dnixd_uds_socket_path: &PathBuf) -> ! {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!("built-paths: failed to send subscription request: {:?}", e);
+                tokio::time::sleep(RECONNECT_DELAY).await;
                 continue;
             }
         };
@@ -126,6 +131,8 @@ async fn handle_events(state: State, dnixd_uds_socket_path: &PathBuf) -> ! {
                 continue;
             }
         }
+
+        tokio::time::sleep(RECONNECT_DELAY).await;
     }
 }
 
