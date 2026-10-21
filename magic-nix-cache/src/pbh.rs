@@ -8,6 +8,7 @@ use anyhow::anyhow;
 use anyhow::Context as _;
 use anyhow::Result;
 use clap::Parser;
+use eventsource_stream::Eventsource as _;
 use futures::StreamExt as _;
 use http_body_util::BodyExt as _;
 use hyper_util::rt::TokioExecutor;
@@ -99,22 +100,21 @@ async fn handle_events(state: State, dnixd_uds_socket_path: &PathBuf) -> ! {
             continue;
         }
 
-        let mut data = response.into_data_stream();
+        // One event can span several frames, so parse the body as a stream.
+        let mut events = response.into_body().into_data_stream().eventsource();
 
-        while let Some(event_str) = data.next().await {
-            let event_str = match event_str {
-                Ok(event) => event,
-                Err(e) => {
+        loop {
+            match events.next().await {
+                Some(Ok(event)) => handle_event(&state, &event.data).await,
+                Some(Err(e)) => {
                     tracing::error!("built-paths: error while receiving: {}", e);
                     break;
                 }
-            };
-
-            let Some(event_str) = event_str.strip_prefix("data: ".as_bytes()) else {
-                tracing::debug!("built-paths subscription: ignoring non-data frame");
-                continue;
-            };
-            handle_event(&state, &String::from_utf8_lossy(event_str)).await;
+                None => {
+                    tracing::warn!("built-paths: event stream ended, reconnecting");
+                    break;
+                }
+            }
         }
 
         tokio::time::sleep(RECONNECT_DELAY).await;
