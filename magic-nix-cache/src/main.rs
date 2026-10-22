@@ -431,6 +431,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
             store.clone(),
             metrics.clone(),
             narinfo_negative_cache.clone(),
+            args.upstream.clone(),
         )
         .with_context(|| "Failed to initialize GitHub Actions Cache API")?;
 
