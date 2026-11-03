@@ -14,6 +14,7 @@ use attic_client::{
 use reqwest::header::HeaderValue;
 use reqwest::Url;
 use serde::Deserialize;
+use std::num::NonZeroUsize;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -37,6 +38,7 @@ pub async fn init_cache(
     flakehub_flake_name: &Option<String>,
     store: Arc<NixStore>,
     auth_method: &super::FlakeHubAuthSource,
+    max_concurrent_uploads: NonZeroUsize,
 ) -> Result<State> {
     // Parse netrc to get the credentials for api.flakehub.com.
     let netrc_path = auth_method.as_path_buf();
@@ -190,7 +192,7 @@ pub async fn init_cache(
     let cache_config = api.get_cache_config(&cache).await?;
 
     let push_config = PushConfig {
-        num_workers: 5, // FIXME: use number of CPUs?
+        num_workers: max_concurrent_uploads.get(),
         force_preamble: false,
     };
 
