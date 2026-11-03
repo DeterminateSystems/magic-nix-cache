@@ -26,7 +26,6 @@ It can upload to [FlakeHub Cache][flakehub-cache], the [GitHub Actions cache][gh
 The GitHub Actions cache is only available inside GitHub Actions.
 The daemon reads its credentials from the environment that GitHub Actions provides to every job (`ACTIONS_CACHE_URL`, `ACTIONS_RESULTS_URL`, `ACTIONS_RUNTIME_TOKEN`, and `ACTIONS_CACHE_SERVICE_V2`).
 Nix can't fetch from the GitHub Actions cache directly, so the daemon also runs a small local server, set by `--listen`, that redirects Nix's requests to the GitHub Actions cache.
-Outside GitHub Actions, use FlakeHub Cache.
 
 For FlakeHub Cache, the daemon needs FlakeHub credentials:
 
@@ -49,22 +48,7 @@ These are the ones you're most likely to need:
 
 ## Development
 
-To work on GitHub Actions cache support locally, you need GitHub Actions cache credentials in your environment.
-See [`gha-cache/README.md`](./gha-cache/README.md) for how that API works.
-
-```shell
-cargo run -- --upstream https://cache.nixos.org
-cargo build --release --target x86_64-unknown-linux-gnu
-cargo build --release --target aarch64-unknown-linux-gnu
-nix copy --to 'http://127.0.0.1:3000' $(which bash)
-nix-store --store $PWD/test-root --extra-substituters 'http://localhost:3000' --option require-sigs false -r $(which bash)
-```
-
-## Acknowledgement
-
-Magic Nix Cache is a collaboration with [Zhaofeng Li][zhaofeng].
-Zhaofeng is a major contributor to the Nix community, having authored [Attic][attic] and [Colmena][colmena].
-We'd like to express our deep gratitude to Zhaofeng for his tremendous work on this project.
+See [`DEVELOPMENT.md`](./DEVELOPMENT.md).
 
 ## Telemetry
 
@@ -95,6 +79,12 @@ To disable diagnostic reporting, set the diagnostics URL to an empty string by p
 In [Magic Nix Cache Action][action], set the `diagnostic-endpoint` input to an empty string.
 
 You can read the full [privacy policy][privacy] for [Determinate Systems][detsys], the creators of this tool and [Determinate Nix][determinate-nix].
+
+## Acknowledgement
+
+Magic Nix Cache is a collaboration with [Zhaofeng Li][zhaofeng].
+Zhaofeng is a major contributor to the Nix community, having authored [Attic][attic] and [Colmena][colmena].
+We'd like to express our deep gratitude to Zhaofeng for his tremendous work on this project.
 
 [action]: https://github.com/DeterminateSystems/magic-nix-cache-action
 [attic]: https://github.com/zhaofengli/attic
