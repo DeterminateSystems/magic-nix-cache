@@ -3,7 +3,8 @@
 To work on GitHub Actions cache support locally, you need GitHub Actions cache credentials in your environment.
 See [`gha-cache/README.md`](./gha-cache/README.md) for how that API works.
 
-Run the daemon with an upstream cache:
+Run the daemon with an upstream cache in its own terminal.
+It keeps running until you stop it, so run the commands below in a different terminal:
 
 ```shell
 cargo run -- --upstream https://cache.nixos.org

@@ -61,7 +61,7 @@ Here is a table of the [telemetry data we collect][telemetry]:
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `distinct_id`                    | An opaque string that represents your project, anonymized by sha256 hashing repository and organization details. |
 | `version`                        | The version of Magic Nix Cache.                                                                                  |
-| `is_ci`                          | Whether the Magic Nix Cache is being used in CI (that is, GitHub Actions).                                       |
+| `is_ci`                          | Whether the Magic Nix Cache is running in any CI system, not only GitHub Actions.                                |
 | `elapsed_seconds`                | How long the cache daemon was running.                                                                           |
 | `narinfos_served`                | Number of narinfos served from the cache daemon.                                                                 |
 | `narinfos_sent_upstream`         | Number of narinfo requests forwarded to the upstream cache.                                                      |
