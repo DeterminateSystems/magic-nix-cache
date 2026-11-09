@@ -28,6 +28,7 @@ use std::collections::HashSet;
 use std::fs::create_dir_all;
 use std::io::Write;
 use std::net::SocketAddr;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -127,6 +128,12 @@ struct Args {
     /// Whether or not to diff the store before and after Magic Nix Cache runs
     #[arg(long, default_value_t = false)]
     diff_store: bool,
+
+    /// Maximum simultaneous FlakeHub Cache uploads.
+    ///
+    /// Does not affect GitHub Actions Cache.
+    #[arg(long, default_value = "5")]
+    max_concurrent_uploads: NonZeroUsize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, clap::ValueEnum)]
@@ -375,6 +382,7 @@ async fn main_cli(args: Args, recorder: detsys_ids_client::Recorder) -> Result<(
             flakehub_flake_name,
             store.clone(),
             &auth_method,
+            args.max_concurrent_uploads,
         )
         .await
         {
