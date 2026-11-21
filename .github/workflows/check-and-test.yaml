@@ -13,7 +13,9 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Check health of flake.lock
         uses: DeterminateSystems/flake-checker-action@main
@@ -21,7 +23,7 @@ jobs:
           fail-mode: true
 
       - name: Install Nix
-        uses: DeterminateSystems/determinate-nix-action@v3
+        uses: DeterminateSystems/determinate-nix-action@bafaa638b9d5ec0e7e3ac1a7fc80453ef1fd265f # v3.20.0
 
       - uses: DeterminateSystems/flakehub-cache-action@main
 
@@ -34,8 +36,9 @@ jobs:
   build:
     name: Build artifacts
     needs: checks
+    permissions:
+      contents: read
     uses: ./.github/workflows/build.yaml
-    secrets: inherit
 
   action-integration-test:
     name: Integration test for magic-nix-cache-action
@@ -57,16 +60,18 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Download closure for ${{ matrix.systems.system }}
-        uses: actions/download-artifact@v4.1.8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ env.ARTIFACT_KEY }}
           path: ${{ env.ARTIFACT_KEY }}
 
       - name: Install Nix on ${{ matrix.systems.system }}
-        uses: DeterminateSystems/determinate-nix-action@v3
+        uses: DeterminateSystems/determinate-nix-action@bafaa638b9d5ec0e7e3ac1a7fc80453ef1fd265f # v3.20.0
 
       - name: Test magic-nix-cache-action@main on ${{ matrix.systems.runner }}
         uses: DeterminateSystems/magic-nix-cache-action@main
@@ -77,9 +82,10 @@ jobs:
       - name: Run nix to test magic-nix-cache-action
         run: |
           nix develop --command echo "just testing"
+
       - name: Exhaust our GitHub Actions Cache tokens
         # Generally skip this step since it is so intensive
-        if: ${{ false }}
+        if: false
         run: |
           date >> README.md
           nix build .#veryLongChain -v
